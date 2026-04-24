@@ -22,6 +22,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 //     drones are cueing the strike
 // ------------------------------------------------------------------
 
+// **** http://localhost:5173/
+
 const W = 820;
 const H = 520;
 const BASE = { x: 70, y: 440 };
