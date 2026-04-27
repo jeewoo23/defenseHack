@@ -113,7 +113,7 @@ class Enemy:
 # Terrain
 # ---------------------------------------------------------------------------
 class Terrain:
-    """
+    """ 
     Smooth terrain using a superposition of Gaussian hills and valleys.
     Returns a modifier in [TERRAIN_MOD_MIN, TERRAIN_MOD_MAX] at any position.
     Higher modifier = better comm/sensor range (favorable high ground).

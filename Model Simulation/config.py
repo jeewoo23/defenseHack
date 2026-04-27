@@ -39,6 +39,11 @@ ENEMY_SPEED      = 40.0    # m per timestep
 ENEMY_KILL_RANGE = 600.0   # kills Static Relay UAVs within this range
 ENEMY_THREAT_RANGE = 900.0  # Static Relay flees if enemy this close
 
+# --- RTB (Return to Base) ---
+RTB_BATTERY_THRESHOLD = 50.0   # UAV begins RTB when battery falls to this %
+RTB_ARRIVAL_DIST      = 300.0  # metres from base = "arrived"
+RTB_RECHARGE_STEPS    = 10     # steps spent at base before redeploying at 100%
+
 # --- Greedy policy thresholds ---
 MAX_NEW_RELAYS_PER_STEP = 1   # cap simultaneous ISR->relay promotions
 N_ISR_RESERVE           = 2   # highest-battery ISR UAVs exempt from promotion

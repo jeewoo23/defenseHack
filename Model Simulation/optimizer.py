@@ -83,7 +83,8 @@ def _wp_covered(wp, static_relays) -> bool:
 # ---------------------------------------------------------------------------
 def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     from uav import UAVMode
-    alive = [u for u in uavs if u.alive]
+    alive = [u for u in uavs if u.alive and not u.rtb
+             and u.recharge_steps_remaining == 0]
     if not alive:
         return
 

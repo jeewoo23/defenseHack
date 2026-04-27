@@ -173,7 +173,7 @@ def plot_metrics(history, save_path: str | None = None):
     ax2.set_ylabel("Cumulative count", color="#555")
     ax.set_title("Force Strength & Attrition")
     ax.set_ylabel("Count")
-    ax.set_ylim(-0.5, 11)
+    ax.set_ylim(-0.5, max(n_alive) + 2)
     ax.grid(True, alpha=0.3)
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
@@ -278,10 +278,11 @@ def create_animation(sim, save_path: str = "aeris_animation.gif",
                     fontsize=8, fontweight="bold", color="black")
 
         # UAVs
-        for uid, pos, mode, alive, bat in zip(
+        uav_rtb_list = frame_data.get("uav_rtb", [False] * len(frame_data["uav_id"]))
+        for uid, pos, mode, alive, bat, is_rtb in zip(
             frame_data["uav_id"], frame_data["uav_pos"],
             frame_data["uav_mode"], frame_data["uav_alive"],
-            frame_data["uav_battery"],
+            frame_data["uav_battery"], uav_rtb_list,
         ):
             from uav import UAVMode
             if not alive:
@@ -289,10 +290,11 @@ def create_animation(sim, save_path: str = "aeris_animation.gif",
                 continue
             color      = _MODE_COLOR[mode]
             marker     = _MODE_MARKER[mode]
-            edge_color = "white" if uid in connected_ids else "#FF1744"
+            edge_color = "#FFD600" if is_rtb else ("white" if uid in connected_ids else "#FF1744")
             ax.scatter(*pos, s=160, c=color, marker=marker,
                        edgecolors=edge_color, linewidths=2, zorder=5)
-            ax.annotate(f"U{uid}\n{bat:.0f}%", pos + np.array([80, 80]),
+            status = "RCHG" if (is_rtb and bat < 55) else ("RTB" if is_rtb else f"{bat:.0f}%")
+            ax.annotate(f"U{uid}\n{status}", pos + np.array([80, 80]),
                         fontsize=6.5, zorder=7)
 
         # Enemies

@@ -8,6 +8,7 @@ from config import (
     DRAIN_RATES, DRAIN_PER_STEP_BASE,
     ISR_COMM_RANGE, MOBILE_RELAY_RANGE, STATIC_RELAY_RANGE,
     UAV_MAX_SPEED, WORLD_SIZE,
+    RTB_BATTERY_THRESHOLD,
 )
 
 
@@ -33,7 +34,10 @@ class UAV:
         self.battery      = 100.0
         self.alive        = True
         self.switch_count = 0
-        self.steps_in_mode = 0   # how many steps since last mode change
+        self.steps_in_mode = 0
+
+        self.rtb                    = False
+        self.recharge_steps_remaining = 0
 
     # ------------------------------------------------------------------
     # Mode management
@@ -51,12 +55,19 @@ class UAV:
         """Called once per timestep."""
         if not self.alive:
             return
+        if self.recharge_steps_remaining > 0:
+            return  # docked at base — no drain
         rate = DRAIN_RATES[self.mode.value]
         self.battery       -= DRAIN_PER_STEP_BASE * rate
         self.steps_in_mode += 1
         if self.battery <= 0:
             self.battery = 0.0
             self.alive   = False
+            return
+        if not self.rtb and self.battery <= RTB_BATTERY_THRESHOLD:
+            self.rtb = True
+            if self.mode != UAVMode.ISR:
+                self.set_mode(UAVMode.ISR)  # must be able to move home
 
     # ------------------------------------------------------------------
     # Communication range (terrain-modified)

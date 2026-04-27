@@ -26,6 +26,7 @@ from config import (
     ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX,
     ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX,
     STRIKE_OBSERVATION_STEPS,
+    RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
 )
 
 from uav import UAV, UAVMode
@@ -116,15 +117,36 @@ class Simulation:
         greedy_policy(self.uavs, connected_ids,
                       alive_enemies, self.base, self.terrain, G)
 
-        # 5. Drain batteries
+        # 5. RTB movement and recharge
+        _base_arr = np.array(BASE_POS, dtype=float)
+        for uav in self.uavs:
+            if not uav.alive:
+                continue
+            if uav.recharge_steps_remaining > 0:
+                uav.recharge_steps_remaining -= 1
+                if uav.recharge_steps_remaining == 0:
+                    uav.battery = 100.0
+                    uav.rtb = False
+                    uav.set_mode(UAVMode.ISR)
+                continue
+            if uav.rtb:
+                dist = np.linalg.norm(uav.pos - _base_arr)
+                if dist <= RTB_ARRIVAL_DIST:
+                    uav.recharge_steps_remaining = RTB_RECHARGE_STEPS
+                else:
+                    delta = _base_arr - uav.pos
+                    uav.pos += (delta / np.linalg.norm(delta)) * min(np.linalg.norm(delta), UAV_MAX_SPEED)
+                    uav.pos = np.clip(uav.pos, 0.0, WORLD_SIZE)
+
+        # 6. Drain batteries
         for uav in self.uavs:
             uav.drain_battery()
 
-        # 6. Rebuild graph after movement & battery deaths
+        # 7. Rebuild graph after movement & battery deaths
         G             = build_comm_graph(self.uavs, self.base, self.terrain)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
-        # 7. Update enemy detection state
+        # 8. Update enemy detection state
         #    get_observed_enemy_ids returns {enemy.id: centroid_of_observers}
         observed = get_observed_enemy_ids(
             self.uavs, self.enemies, connected_ids, self.terrain
@@ -146,7 +168,7 @@ class Simulation:
                 enemy.consecutive_obs     = 0
                 enemy._detecting_centroid = None
 
-        # 8. Metrics
+        # 9. Metrics
         alive_uavs   = [u for u in self.uavs if u.alive]
         alive_enemies = [e for e in self.enemies if e.alive]
         n_alive       = len(alive_uavs)
@@ -194,6 +216,8 @@ class Simulation:
                 "uav_mode":      [u.mode        for u in self.uavs],
                 "uav_alive":     [u.alive       for u in self.uavs],
                 "uav_battery":   [u.battery     for u in self.uavs],
+                "uav_rtb":       [u.rtb or u.recharge_steps_remaining > 0
+                                  for u in self.uavs],
                 "uav_id":        [u.id          for u in self.uavs],
                 "enemy_pos":     [e.pos.copy()  for e in self.enemies],
                 "enemy_alive":   [e.alive       for e in self.enemies],
