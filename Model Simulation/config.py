@@ -75,7 +75,14 @@ W_ENERGY = 0.5
 W_SWITCH = 0.1
 
 # --- Simulation ---
-N_UAVS    = 10
-N_ENEMIES = 5
+N_UAVS         = 10
+N_ENEMIES      = 5    # center band
+N_ENEMIES_FLANK = 5   # per flank (top + bottom)
 SIM_SEED  = 42
-N_STEPS   = 200
+N_STEPS   = 500
+
+# --- Flank enemy spawn zones (top and bottom of map) ---
+ENEMY_SPAWN_Y_TOP_MIN = 8_000.0
+ENEMY_SPAWN_Y_TOP_MAX = 10_000.0
+ENEMY_SPAWN_Y_BOT_MIN = 0.0
+ENEMY_SPAWN_Y_BOT_MAX = 2_000.0

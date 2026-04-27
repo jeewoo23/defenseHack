@@ -22,9 +22,11 @@ from typing import List
 import networkx as nx
 
 from config import (
-    WORLD_SIZE, BASE_POS, N_UAVS, N_ENEMIES, SIM_SEED,
+    WORLD_SIZE, BASE_POS, N_UAVS, N_ENEMIES, N_ENEMIES_FLANK, SIM_SEED,
     ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX,
     ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX,
+    ENEMY_SPAWN_Y_TOP_MIN, ENEMY_SPAWN_Y_TOP_MAX,
+    ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX,
     STRIKE_OBSERVATION_STEPS,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
 )
@@ -60,9 +62,10 @@ class StepMetrics:
 class Simulation:
     def __init__(
         self,
-        n_uavs:    int   = N_UAVS,
-        n_enemies: int   = N_ENEMIES,
-        seed:      int   = SIM_SEED,
+        n_uavs:         int = N_UAVS,
+        n_enemies:      int = N_ENEMIES,
+        n_enemies_flank: int = N_ENEMIES_FLANK,
+        seed:           int = SIM_SEED,
     ):
         rng = np.random.RandomState(seed)
 
@@ -78,10 +81,22 @@ class Simulation:
 
         # Enemies spawn far from base — relay chain must extend to reach them
         self.enemies: list[Enemy] = []
-        for i in range(n_enemies):
+        eid = 0
+        for _ in range(n_enemies):
             pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
                    rng.uniform(ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX)]
-            self.enemies.append(Enemy(enemy_id=i, pos=pos))
+            self.enemies.append(Enemy(enemy_id=eid, pos=pos))
+            eid += 1
+        for _ in range(n_enemies_flank):
+            pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
+                   rng.uniform(ENEMY_SPAWN_Y_TOP_MIN, ENEMY_SPAWN_Y_TOP_MAX)]
+            self.enemies.append(Enemy(enemy_id=eid, pos=pos))
+            eid += 1
+        for _ in range(n_enemies_flank):
+            pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
+                   rng.uniform(ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX)]
+            self.enemies.append(Enemy(enemy_id=eid, pos=pos))
+            eid += 1
 
         self.step_num:           int               = 0
         self.history:            list[StepMetrics] = []
@@ -233,7 +248,7 @@ class Simulation:
     # ------------------------------------------------------------------
     def run(
         self,
-        n_steps:           int             = 200,
+        n_steps:           int             = 500,
         snapshot_at_steps: list[int] | None = None,
         animate_every:     int             = 2,
         verbose:           bool            = True,

@@ -11,9 +11,9 @@ Outputs:
 import matplotlib.pyplot as plt
 from sim import Simulation
 from plotting import plot_snapshots_grid, plot_metrics, create_animation
-from config import N_STEPS
+from config import N_STEPS, N_UAVS, N_ENEMIES, N_ENEMIES_FLANK
 
-SNAPSHOT_STEPS = [1, 40, 80, 120, 160, 200]
+SNAPSHOT_STEPS = [1, 100, 200, 300, 400, 500]
 
 
 def main():
@@ -43,8 +43,9 @@ def main():
     print("\n" + "=" * 60)
     print("  Simulation Summary")
     print("=" * 60)
-    print(f"  Final alive UAVs    : {final.n_alive} / 10")
-    print(f"  Enemies remaining   : {final.n_enemies} / 5")
+    total_enemies = N_ENEMIES + 2 * N_ENEMIES_FLANK
+    print(f"  Final alive UAVs    : {final.n_alive} / {N_UAVS}")
+    print(f"  Enemies remaining   : {final.n_enemies} / {total_enemies}")
     print(f"  Enemy strikes       : {total_strikes}")
     print(f"  UAV kills by enemy  : {total_uav_kills}")
     print(f"  Final ISR coverage  : {final.isr_coverage:.2f}")
