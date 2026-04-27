@@ -82,14 +82,19 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
 
     # --- Enemies ---
     for enemy in sim.enemies:
+        if not enemy.alive:
+            ax.scatter(*enemy.pos, s=120, c="gray", marker="x", alpha=0.4, zorder=4)
+            ax.annotate(f"E{enemy.id} KIA", enemy.pos + np.array([80, 80]),
+                        fontsize=7, color="gray")
+            continue
+        obs   = enemy.consecutive_obs
+        label = f"E{enemy.id}" + (f" [{obs}/20]" if obs > 0 else "")
         ax.scatter(*enemy.pos, s=220, c="#B71C1C", marker="*", zorder=6)
-        ax.annotate(f"E{enemy.id}", enemy.pos + np.array([80, 80]),
+        ax.annotate(label, enemy.pos + np.array([80, 80]),
                     fontsize=8, color="#B71C1C", fontweight="bold")
-        # Kill range circle
         ax.add_patch(plt.Circle(enemy.pos, ENEMY_KILL_RANGE,
                                 color="#B71C1C", fill=False,
                                 alpha=0.5, linewidth=1.2, linestyle="--"))
-        # Threat range circle (lighter)
         ax.add_patch(plt.Circle(enemy.pos, ENEMY_THREAT_RANGE,
                                 color="#FF6F00", fill=False,
                                 alpha=0.25, linewidth=0.8, linestyle=":"))
@@ -120,13 +125,15 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
 # Time-series metrics dashboard
 # ---------------------------------------------------------------------------
 def plot_metrics(history, save_path: str | None = None):
-    steps       = [m.step          for m in history]
-    isr_cov     = [m.isr_coverage  for m in history]
-    conn_frac   = [m.conn_fraction for m in history]
-    n_alive     = [m.n_alive       for m in history]
-    avg_bat     = [m.avg_battery   for m in history]
-    objective   = [m.objective     for m in history]
-    total_kills = np.cumsum([m.kills for m in history])
+    steps         = [m.step          for m in history]
+    isr_cov       = [m.isr_coverage  for m in history]
+    conn_frac     = [m.conn_fraction for m in history]
+    n_alive       = [m.n_alive       for m in history]
+    n_enemies     = [m.n_enemies     for m in history]
+    avg_bat       = [m.avg_battery   for m in history]
+    objective     = [m.objective     for m in history]
+    total_uav_kills   = np.cumsum([m.kills   for m in history])
+    total_strikes     = np.cumsum([m.strikes for m in history])
 
     isr_c  = [m.role_counts.get("ISR",          0) for m in history]
     mob_c  = [m.role_counts.get("Mobile Relay", 0) for m in history]
@@ -153,20 +160,24 @@ def plot_metrics(history, save_path: str | None = None):
     ax.set_ylim(-0.05, 1.1)
     ax.grid(True, alpha=0.3)
 
-    # Alive UAVs + cumulative kills
+    # Alive UAVs + alive enemies + cumulative strikes
     ax = axes[0, 2]
-    ax.plot(steps, n_alive, color="#9C27B0", linewidth=2, label="Alive")
+    ax.plot(steps, n_alive,   color="#9C27B0", linewidth=2, label="UAVs alive")
+    ax.plot(steps, n_enemies, color="#B71C1C", linewidth=2,
+            linestyle="--", label="Enemies alive")
     ax2 = ax.twinx()
-    ax2.plot(steps, total_kills, color="#F44336", linewidth=1.5,
-             linestyle="--", label="Cumulative kills")
-    ax2.set_ylabel("Cumulative Enemy Kills", color="#F44336")
-    ax.set_title("Alive UAVs & Enemy Kills")
-    ax.set_ylabel("Alive UAVs")
+    ax2.plot(steps, total_uav_kills, color="#F44336", linewidth=1.2,
+             linestyle=":", label="UAV kills (cumul.)")
+    ax2.plot(steps, total_strikes,   color="#FF6F00", linewidth=1.2,
+             linestyle="-.", label="Enemy strikes (cumul.)")
+    ax2.set_ylabel("Cumulative count", color="#555")
+    ax.set_title("Force Strength & Attrition")
+    ax.set_ylabel("Count")
     ax.set_ylim(-0.5, 11)
     ax.grid(True, alpha=0.3)
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8, loc="lower left")
+    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=7.5, loc="lower left")
 
     # Role distribution (stacked area)
     ax = axes[1, 0]
@@ -285,10 +296,24 @@ def create_animation(sim, save_path: str = "aeris_animation.gif",
                         fontsize=6.5, zorder=7)
 
         # Enemies
-        for eid, epos in zip(frame_data["enemy_id"], frame_data["enemy_pos"]):
-            ax.scatter(*epos, s=220, c="#B71C1C", marker="*", zorder=6)
-            ax.annotate(f"E{eid}", epos + np.array([80, 80]),
-                        fontsize=8, color="#B71C1C", fontweight="bold")
+        enemy_alive  = frame_data.get("enemy_alive",  [True] * len(frame_data["enemy_id"]))
+        enemy_obs    = frame_data.get("enemy_obs",    [0]    * len(frame_data["enemy_id"]))
+        for eid, epos, ealive, eobs in zip(
+            frame_data["enemy_id"], frame_data["enemy_pos"], enemy_alive, enemy_obs
+        ):
+            if not ealive:
+                ax.scatter(*epos, s=120, c="gray", marker="x", alpha=0.4, zorder=4)
+                ax.annotate(f"E{eid} KIA", epos + np.array([80, 80]),
+                            fontsize=7, color="gray")
+                continue
+            # Colour intensity reflects how close to being struck (obs counter)
+            from config import STRIKE_OBSERVATION_STEPS
+            threat_frac = min(eobs / STRIKE_OBSERVATION_STEPS, 1.0)
+            face_color  = (1.0, max(0.05, 0.75 * (1 - threat_frac)), 0.0) if eobs > 0 else "#B71C1C"
+            ax.scatter(*epos, s=220, c=[face_color], marker="*", zorder=6)
+            label = f"E{eid}" + (f" [{eobs}/{STRIKE_OBSERVATION_STEPS}]" if eobs > 0 else "")
+            ax.annotate(label, epos + np.array([80, 80]),
+                        fontsize=7.5, color="#B71C1C", fontweight="bold")
             ax.add_patch(plt.Circle(epos, ENEMY_KILL_RANGE,
                                     color="#B71C1C", fill=False,
                                     alpha=0.5, linewidth=1.2, linestyle="--"))

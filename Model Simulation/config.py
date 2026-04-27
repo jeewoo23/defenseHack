@@ -10,7 +10,7 @@ BASE_POS   = [500.0, 5000.0]
 # --- Communication ranges (base, before terrain modifier) ---
 BASE_COMM_RANGE       = 2_000.0   # Base station reach
 ISR_COMM_RANGE        = 500.0
-MOBILE_RELAY_RANGE    = 750.0
+MOBILE_RELAY_RANGE    = 1_500.0
 STATIC_RELAY_RANGE    = 1_500.0
 
 # ISR sensor range (camera/sensor footprint — wider than comm range)
@@ -50,12 +50,18 @@ STEPS_MOBILE_BEFORE_STATIC = 8
 STATIC_BATTERY_THRESHOLD   = 50.0
 
 # --- Enemy spawn zone ---
-# x: start at 3000 so relay 1 (~x=1700) has >1100m safe margin before enemy zone
-# y: within a 3 km band around base (y=5000) so relay chain corridor covers all enemies
-ENEMY_SPAWN_X_MIN = 3_000.0
-ENEMY_SPAWN_X_MAX = 6_500.0
-ENEMY_SPAWN_Y_MIN = 3_500.0
-ENEMY_SPAWN_Y_MAX = 6_500.0
+# Enemies spawn far from base (x=6000-9000) to give allied forces time to set up
+# the relay chain before enemies close in.  Tight y-band keeps all enemies inside
+# the ISR sensor corridor so coverage metrics are meaningful.
+ENEMY_SPAWN_X_MIN = 6_000.0
+ENEMY_SPAWN_X_MAX = 9_000.0
+ENEMY_SPAWN_Y_MIN = 4_000.0
+ENEMY_SPAWN_Y_MAX = 6_000.0
+
+# --- Strike mechanic ---
+# Enemy is eliminated after this many *consecutive* steps of being observed by
+# a connected ISR UAV (simulates FOB calling a fire mission).
+STRIKE_OBSERVATION_STEPS = 20
 
 # --- Objective weights ---
 W_ISR    = 3.0

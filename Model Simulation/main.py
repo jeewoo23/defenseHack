@@ -37,17 +37,20 @@ def main():
     final = sim.history[-1]
     best_cov = max(m.isr_coverage  for m in sim.history)
     best_conn = max(m.conn_fraction for m in sim.history)
-    total_kills = sum(m.kills for m in sim.history)
+    total_uav_kills   = sum(m.kills   for m in sim.history)
+    total_strikes     = sum(m.strikes for m in sim.history)
 
     print("\n" + "=" * 60)
     print("  Simulation Summary")
     print("=" * 60)
     print(f"  Final alive UAVs    : {final.n_alive} / 10")
+    print(f"  Enemies remaining   : {final.n_enemies} / 5")
+    print(f"  Enemy strikes       : {total_strikes}")
+    print(f"  UAV kills by enemy  : {total_uav_kills}")
     print(f"  Final ISR coverage  : {final.isr_coverage:.2f}")
     print(f"  Final connectivity  : {final.conn_fraction:.2f}")
     print(f"  Peak ISR coverage   : {best_cov:.2f}")
     print(f"  Peak connectivity   : {best_conn:.2f}")
-    print(f"  Enemy kills (total) : {total_kills}")
     print(f"  Final objective     : {final.objective:.3f}")
     print("=" * 60)
 

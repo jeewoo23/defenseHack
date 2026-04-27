@@ -2,7 +2,8 @@
 Simulation loop.
 
 Timestep ordering:
-  1.  Enemies move (hunt static relays)
+  1.  Enemies move — using detection state from previous step
+         (retreat if detected, else hunt static relays, else patrol)
   2.  Enemies attempt kills on static relays in range
   3.  Build communication graph
   4.  Identify connected UAVs
@@ -10,7 +11,8 @@ Timestep ordering:
   6.  Drain batteries (may kill UAVs with empty batteries)
   7.  Rebuild communication graph after movement
   8.  Recompute connectivity + ISR coverage
-  9.  Log metrics
+  9.  Update enemy detection counters; apply FOB strikes (consecutive obs >= threshold)
+ 10.  Log metrics
 """
 from __future__ import annotations
 import numpy as np
@@ -23,11 +25,13 @@ from config import (
     WORLD_SIZE, BASE_POS, N_UAVS, N_ENEMIES, SIM_SEED,
     ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX,
     ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX,
+    STRIKE_OBSERVATION_STEPS,
 )
 
 from uav import UAV, UAVMode
 from world import BaseStation, Enemy, Terrain
-from graph import build_comm_graph, get_connected_uav_ids, compute_isr_coverage
+from graph import (build_comm_graph, get_connected_uav_ids,
+                   compute_isr_coverage, get_observed_enemy_ids)
 from optimizer import compute_objective, greedy_policy
 
 
@@ -36,15 +40,17 @@ from optimizer import compute_objective, greedy_policy
 # ---------------------------------------------------------------------------
 @dataclass
 class StepMetrics:
-    step:         int
-    n_alive:      int
-    n_connected:  int
-    isr_coverage: float
+    step:          int
+    n_alive:       int
+    n_connected:   int
+    isr_coverage:  float
     conn_fraction: float
-    avg_battery:  float
-    objective:    float
-    kills:        int          # UAVs killed by enemies this step
-    role_counts:  dict = field(default_factory=dict)
+    avg_battery:   float
+    objective:     float
+    kills:         int    # UAVs killed by enemies this step
+    strikes:       int    # enemies eliminated by FOB strike this step
+    n_enemies:     int    # alive enemies at end of step
+    role_counts:   dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -69,16 +75,16 @@ class Simulation:
             pos    = np.clip(np.array(BASE_POS) + offset, 0, WORLD_SIZE)
             self.uavs.append(UAV(uav_id=i, pos=pos, mode=UAVMode.ISR))
 
-        # Enemies start in the operational zone (within relay chain corridor)
+        # Enemies spawn far from base — relay chain must extend to reach them
         self.enemies: list[Enemy] = []
         for i in range(n_enemies):
             pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
                    rng.uniform(ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX)]
             self.enemies.append(Enemy(enemy_id=i, pos=pos))
 
-        self.step_num:         int               = 0
-        self.history:          list[StepMetrics] = []
-        self._prev_switch_total: int             = 0
+        self.step_num:           int               = 0
+        self.history:            list[StepMetrics] = []
+        self._prev_switch_total: int               = 0
 
         # Snapshot storage: list of (step, G, connected_ids) for selected steps
         self.snapshots: list[tuple] = []
@@ -91,23 +97,24 @@ class Simulation:
              record_frame: bool = False) -> StepMetrics:
         self.step_num += 1
 
-        # 1. Enemies move
+        # 1. Enemies move (detection centroid was set at end of previous step)
         for enemy in self.enemies:
             enemy.move(self.uavs)
 
-        # 2. Enemy kill attempts
+        # 2. Enemy kill attempts (only alive enemies)
         kills_this_step = 0
         for enemy in self.enemies:
             killed = enemy.attempt_kill(self.uavs)
             kills_this_step += len(killed)
 
         # 3. Build initial graph
-        G            = build_comm_graph(self.uavs, self.base, self.terrain)
+        G             = build_comm_graph(self.uavs, self.base, self.terrain)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
-        # 4. Greedy policy (modifies modes and positions)
+        # 4. Greedy policy (modifies modes and positions); pass only alive enemies
+        alive_enemies = [e for e in self.enemies if e.alive]
         greedy_policy(self.uavs, connected_ids,
-                      self.enemies, self.base, self.terrain, G)
+                      alive_enemies, self.base, self.terrain, G)
 
         # 5. Drain batteries
         for uav in self.uavs:
@@ -117,14 +124,37 @@ class Simulation:
         G             = build_comm_graph(self.uavs, self.base, self.terrain)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
-        # 7. Metrics
-        alive = [u for u in self.uavs if u.alive]
-        n_alive = len(alive)
+        # 7. Update enemy detection state
+        #    get_observed_enemy_ids returns {enemy.id: centroid_of_observers}
+        observed = get_observed_enemy_ids(
+            self.uavs, self.enemies, connected_ids, self.terrain
+        )
+
+        strikes_this_step = 0
+        for enemy in self.enemies:
+            if not enemy.alive:
+                enemy._detecting_centroid = None
+                continue
+            if enemy.id in observed:
+                enemy.consecutive_obs += 1
+                enemy._detecting_centroid = observed[enemy.id]
+                if enemy.consecutive_obs >= STRIKE_OBSERVATION_STEPS:
+                    enemy.alive = False
+                    enemy._detecting_centroid = None
+                    strikes_this_step += 1
+            else:
+                enemy.consecutive_obs     = 0
+                enemy._detecting_centroid = None
+
+        # 8. Metrics
+        alive_uavs   = [u for u in self.uavs if u.alive]
+        alive_enemies = [e for e in self.enemies if e.alive]
+        n_alive       = len(alive_uavs)
 
         isr_cov    = compute_isr_coverage(self.uavs, self.enemies,
                                           connected_ids, self.terrain)
         conn_frac  = len(connected_ids) / n_alive if n_alive else 0.0
-        avg_bat    = np.mean([u.battery for u in alive]) if alive else 0.0
+        avg_bat    = np.mean([u.battery for u in alive_uavs]) if alive_uavs else 0.0
 
         total_switches  = sum(u.switch_count for u in self.uavs)
         switch_delta    = total_switches - self._prev_switch_total
@@ -134,9 +164,9 @@ class Simulation:
                                 self.terrain, isr_cov, switch_delta)
 
         role_counts = {
-            "ISR":          sum(1 for u in alive if u.mode == UAVMode.ISR),
-            "Mobile Relay": sum(1 for u in alive if u.mode == UAVMode.MOBILE_RELAY),
-            "Static Relay": sum(1 for u in alive if u.mode == UAVMode.STATIC_RELAY),
+            "ISR":          sum(1 for u in alive_uavs if u.mode == UAVMode.ISR),
+            "Mobile Relay": sum(1 for u in alive_uavs if u.mode == UAVMode.MOBILE_RELAY),
+            "Static Relay": sum(1 for u in alive_uavs if u.mode == UAVMode.STATIC_RELAY),
         }
 
         metrics = StepMetrics(
@@ -148,6 +178,8 @@ class Simulation:
             avg_battery=avg_bat,
             objective=obj,
             kills=kills_this_step,
+            strikes=strikes_this_step,
+            n_enemies=len(alive_enemies),
             role_counts=role_counts,
         )
         self.history.append(metrics)
@@ -158,13 +190,15 @@ class Simulation:
         if record_frame:
             self.frames.append({
                 "step":          self.step_num,
-                "uav_pos":       [u.pos.copy()   for u in self.uavs],
-                "uav_mode":      [u.mode         for u in self.uavs],
-                "uav_alive":     [u.alive        for u in self.uavs],
-                "uav_battery":   [u.battery      for u in self.uavs],
-                "uav_id":        [u.id           for u in self.uavs],
-                "enemy_pos":     [e.pos.copy()   for e in self.enemies],
-                "enemy_id":      [e.id           for e in self.enemies],
+                "uav_pos":       [u.pos.copy()  for u in self.uavs],
+                "uav_mode":      [u.mode        for u in self.uavs],
+                "uav_alive":     [u.alive       for u in self.uavs],
+                "uav_battery":   [u.battery     for u in self.uavs],
+                "uav_id":        [u.id          for u in self.uavs],
+                "enemy_pos":     [e.pos.copy()  for e in self.enemies],
+                "enemy_alive":   [e.alive       for e in self.enemies],
+                "enemy_id":      [e.id          for e in self.enemies],
+                "enemy_obs":     [e.consecutive_obs for e in self.enemies],
                 "edges":         list(G.edges()),
                 "connected_ids": set(connected_ids),
                 "metrics":       metrics,
@@ -175,10 +209,10 @@ class Simulation:
     # ------------------------------------------------------------------
     def run(
         self,
-        n_steps:           int       = 200,
+        n_steps:           int             = 200,
         snapshot_at_steps: list[int] | None = None,
-        animate_every:     int       = 2,
-        verbose:           bool      = True,
+        animate_every:     int             = 2,
+        verbose:           bool            = True,
     ) -> list[StepMetrics]:
         if snapshot_at_steps is None:
             snapshot_at_steps = set()
@@ -186,20 +220,26 @@ class Simulation:
             snapshot_at_steps = set(snapshot_at_steps)
 
         for _ in range(n_steps):
-            next_step  = self.step_num + 1
+            next_step    = self.step_num + 1
             record_snap  = next_step in snapshot_at_steps
             record_frame = (next_step % animate_every == 0) or next_step == 1
             m = self.step(record_snapshot=record_snap, record_frame=record_frame)
 
             if verbose and self.step_num % 25 == 0:
+                extras = []
+                if m.kills:
+                    extras.append(f"UAV kills: {m.kills}")
+                if m.strikes:
+                    extras.append(f"Strikes: {m.strikes}")
                 print(
                     f"Step {self.step_num:3d} | "
-                    f"Alive: {m.n_alive:2d} | "
+                    f"Alive: {m.n_alive:2d} UAVs | "
+                    f"Enemies: {m.n_enemies} | "
                     f"Connected: {m.n_connected:2d} | "
                     f"ISR cov: {m.isr_coverage:.2f} | "
                     f"Battery: {m.avg_battery:.1f}% | "
                     f"Score: {m.objective:.3f}"
-                    + (f" | Kills: {m.kills}" if m.kills else "")
+                    + (f" | " + ", ".join(extras) if extras else "")
                 )
 
         return self.history

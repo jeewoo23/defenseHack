@@ -60,10 +60,11 @@ def get_connected_uav_ids(G: nx.Graph, uavs) -> set:
 
 def compute_isr_coverage(uavs, enemies, connected_ids: set, terrain) -> float:
     """
-    Fraction of enemies observed by at least one *connected* ISR UAV.
-    Returns 1.0 if no enemies exist.
+    Fraction of *alive* enemies observed by at least one *connected* ISR UAV.
+    Returns 1.0 if no alive enemies exist.
     """
-    if not enemies:
+    alive_enemies = [e for e in enemies if e.alive]
+    if not alive_enemies:
         return 1.0
 
     from uav import UAVMode
@@ -73,8 +74,36 @@ def compute_isr_coverage(uavs, enemies, connected_ids: set, terrain) -> float:
     for uav in isr_uavs:
         mod          = terrain.get_modifier(uav.pos)
         sensor_range = ISR_SENSOR_RANGE * mod
-        for idx, enemy in enumerate(enemies):
+        for idx, enemy in enumerate(alive_enemies):
             if np.linalg.norm(uav.pos - enemy.pos) <= sensor_range:
                 covered.add(idx)
 
-    return len(covered) / len(enemies)
+    return len(covered) / len(alive_enemies)
+
+
+def get_observed_enemy_ids(uavs, enemies, connected_ids: set, terrain) -> dict:
+    """
+    For each alive enemy observed by a connected ISR UAV, return a mapping
+    enemy.id -> centroid of observing ISR positions.
+    Used to drive enemy retreat and update detection counters.
+    """
+    from uav import UAVMode
+    isr_uavs = [u for u in uavs
+                if u.alive and u.mode == UAVMode.ISR and u.id in connected_ids]
+
+    # enemy_id -> list of observing ISR positions
+    observers: dict[int, list] = {}
+    for uav in isr_uavs:
+        mod          = terrain.get_modifier(uav.pos)
+        sensor_range = ISR_SENSOR_RANGE * mod
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            if np.linalg.norm(uav.pos - enemy.pos) <= sensor_range:
+                observers.setdefault(enemy.id, []).append(uav.pos.copy())
+
+    # Collapse lists to centroid
+    return {
+        eid: np.mean(positions, axis=0)
+        for eid, positions in observers.items()
+    }

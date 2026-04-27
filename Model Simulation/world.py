@@ -7,6 +7,7 @@ from config import (
     WORLD_SIZE, BASE_POS, BASE_COMM_RANGE,
     ENEMY_SPEED, ENEMY_KILL_RANGE,
     TERRAIN_MOD_MIN, TERRAIN_MOD_MAX,
+    ISR_SENSOR_RANGE,
 )
 
 
@@ -24,25 +25,51 @@ class BaseStation:
 # ---------------------------------------------------------------------------
 class Enemy:
     """
-    Moves toward the nearest Static Relay UAV (easy, stationary target).
-    Falls back to random patrol when no static relays exist.
-    Kills any Static Relay UAV within KILL_RANGE at the end of each step.
+    Behaviour priority (highest to lowest):
+      1. Retreat  — if detected by a connected ISR last step, flee away from
+                    the detecting UAV centroid.
+      2. Hunt     — move toward nearest Static Relay UAV.
+      3. Patrol   — random drift anchored to spawn point.
+
+    Eliminated by a fire-mission strike after STRIKE_OBSERVATION_STEPS
+    consecutive steps of ISR detection (handled in sim.py).
     """
 
     PATROL_RADIUS = 700.0    # max wander distance from spawn when not hunting
 
     def __init__(self, enemy_id: int, pos):
-        self.id           = enemy_id
-        self.pos          = np.array(pos, dtype=float)
+        self.id            = enemy_id
+        self.pos           = np.array(pos, dtype=float)
         self.patrol_center = self.pos.copy()   # home point for idle patrol
+
+        self.alive           = True
+        self.consecutive_obs = 0    # consecutive steps observed by connected ISR
+        # Centroid of detecting ISR UAVs set by sim at end of each step;
+        # used by move() at the start of the next step so enemies react 1 step late.
+        self._detecting_centroid: np.ndarray | None = None
 
     # ------------------------------------------------------------------
     def move(self, uavs) -> None:
+        if not self.alive:
+            return
+
+        # 1. Retreat from detecting ISR
+        if self._detecting_centroid is not None:
+            direction = self.pos - self._detecting_centroid
+            dist      = np.linalg.norm(direction)
+            if dist < 1.0:
+                direction = np.array([1.0, 0.0])   # generic eastward retreat
+            else:
+                direction = direction / dist
+            self.pos += direction * ENEMY_SPEED
+            self.pos  = np.clip(self.pos, 0.0, WORLD_SIZE)
+            return
+
         from uav import UAVMode
         static_targets = [u for u in uavs
                           if u.alive and u.mode == UAVMode.STATIC_RELAY]
         if static_targets:
-            # Hunt nearest Static Relay
+            # 2. Hunt nearest Static Relay
             nearest   = min(static_targets,
                             key=lambda u: np.linalg.norm(u.pos - self.pos))
             direction = nearest.pos - self.pos
@@ -51,7 +78,7 @@ class Enemy:
                 step = min(ENEMY_SPEED, dist)
                 self.pos += (direction / dist) * step
         else:
-            # Patrol: random drift but pulled back if too far from home
+            # 3. Patrol: random drift pulled back toward home
             drift = np.random.uniform(-ENEMY_SPEED * 0.4, ENEMY_SPEED * 0.4, 2)
             dist_from_home = np.linalg.norm(self.pos - self.patrol_center)
             if dist_from_home > self.PATROL_RADIUS:
@@ -64,6 +91,8 @@ class Enemy:
     # ------------------------------------------------------------------
     def attempt_kill(self, uavs) -> list[int]:
         """Return list of UAV ids eliminated this step."""
+        if not self.alive:
+            return []
         from uav import UAVMode
         killed = []
         for uav in uavs:
@@ -76,7 +105,8 @@ class Enemy:
         return killed
 
     def __repr__(self) -> str:
-        return f"Enemy(id={self.id}, pos=({self.pos[0]:.0f},{self.pos[1]:.0f}))"
+        status = "alive" if self.alive else "struck"
+        return f"Enemy(id={self.id}, pos=({self.pos[0]:.0f},{self.pos[1]:.0f}), {status})"
 
 
 # ---------------------------------------------------------------------------
