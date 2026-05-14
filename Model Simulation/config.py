@@ -69,6 +69,17 @@ MIN_ENEMY_DIST_FOR_STATIC  = 1_100.0  # relay 1 (1300m from closest enemy) can g
 STEPS_MOBILE_BEFORE_STATIC = 8
 STATIC_BATTERY_THRESHOLD   = 50.0
 
+# --- Adaptive relay-chain planning ---
+ENABLE_BRANCHING_CHAIN = True
+MAX_BRANCHES = 3
+BRANCH_TRIGGER_MIN_ENEMIES = 2
+NORTH_FLANK_Y_THRESHOLD = 6500.0
+SOUTH_FLANK_Y_THRESHOLD = 3500.0
+RELAY_BUDGET_FRACTION = 0.7
+CHAIN_HOP_RANGE = 1_300.0
+MIN_WAYPOINTS_PER_BRANCH = 1
+MAX_WAYPOINTS_PER_BRANCH = 3
+
 # --- Enemy spawn zone ---
 # Enemies spawn far from base (x=6000-9000) to give allied forces time to set up
 # the relay chain before enemies close in.  Tight y-band keeps all enemies inside
