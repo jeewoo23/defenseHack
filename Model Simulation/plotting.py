@@ -132,6 +132,11 @@ def plot_metrics(history, save_path: str | None = None):
     n_enemies     = [m.n_enemies     for m in history]
     avg_bat       = [m.avg_battery   for m in history]
     objective     = [m.objective     for m in history]
+    north_cov     = [np.nan if m.north_coverage  is None else m.north_coverage  for m in history]
+    center_cov    = [np.nan if m.center_coverage is None else m.center_coverage for m in history]
+    south_cov     = [np.nan if m.south_coverage  is None else m.south_coverage  for m in history]
+    time_weighted = [m.time_weighted_coverage for m in history]
+    latencies     = history[-1].detection_latencies if history else []
     total_uav_kills   = np.cumsum([m.kills   for m in history])
     total_strikes     = np.cumsum([m.strikes for m in history])
 
@@ -139,7 +144,7 @@ def plot_metrics(history, save_path: str | None = None):
     mob_c  = [m.role_counts.get("Mobile Relay", 0) for m in history]
     sta_c  = [m.role_counts.get("Static Relay", 0) for m in history]
 
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig, axes = plt.subplots(3, 3, figsize=(18, 13))
     fig.suptitle("AERIS Simulation — Performance Metrics", fontsize=14, fontweight="bold")
 
     # ISR Coverage
@@ -160,8 +165,19 @@ def plot_metrics(history, save_path: str | None = None):
     ax.set_ylim(-0.05, 1.1)
     ax.grid(True, alpha=0.3)
 
-    # Alive UAVs + alive enemies + cumulative strikes
+    # Per-flank coverage
     ax = axes[0, 2]
+    ax.plot(steps, north_cov, color="#7C3AED", linewidth=1.8, label="North")
+    ax.plot(steps, center_cov, color="#2196F3", linewidth=2.2, label="Center")
+    ax.plot(steps, south_cov, color="#D97706", linewidth=1.8, label="South")
+    ax.set_title("Per-Flank ISR Coverage")
+    ax.set_ylabel("Fraction Observed")
+    ax.set_ylim(-0.05, 1.1)
+    ax.legend(fontsize=8, loc="upper right")
+    ax.grid(True, alpha=0.3)
+
+    # Alive UAVs + alive enemies + cumulative strikes
+    ax = axes[1, 0]
     ax.plot(steps, n_alive,   color="#9C27B0", linewidth=2, label="UAVs alive")
     ax.plot(steps, n_enemies, color="#B71C1C", linewidth=2,
             linestyle="--", label="Enemies alive")
@@ -180,7 +196,7 @@ def plot_metrics(history, save_path: str | None = None):
     ax.legend(lines1 + lines2, labels1 + labels2, fontsize=7.5, loc="lower left")
 
     # Role distribution (stacked area)
-    ax = axes[1, 0]
+    ax = axes[1, 1]
     ax.stackplot(steps, isr_c, mob_c, sta_c,
                  labels=["ISR", "Mobile Relay", "Static Relay"],
                  colors=["#2196F3", "#4CAF50", "#FF9800"], alpha=0.82)
@@ -190,7 +206,7 @@ def plot_metrics(history, save_path: str | None = None):
     ax.grid(True, alpha=0.3)
 
     # Battery
-    ax = axes[1, 1]
+    ax = axes[1, 2]
     ax.plot(steps, avg_bat, color="#FF9800", linewidth=2)
     ax.fill_between(steps, avg_bat, alpha=0.15, color="#FF9800")
     ax.axhline(20, color="red", linewidth=1, linestyle="--", alpha=0.6, label="Critical (20%)")
@@ -201,7 +217,7 @@ def plot_metrics(history, save_path: str | None = None):
     ax.grid(True, alpha=0.3)
 
     # Objective score
-    ax = axes[1, 2]
+    ax = axes[2, 0]
     ax.plot(steps, objective, color="#607D8B", linewidth=2)
     ax.fill_between(steps, objective,
                     [min(objective)] * len(objective),
@@ -210,8 +226,34 @@ def plot_metrics(history, save_path: str | None = None):
     ax.set_ylabel("Score (higher = better)")
     ax.grid(True, alpha=0.3)
 
+    # Time-weighted coverage
+    ax = axes[2, 1]
+    ax.plot(steps, time_weighted, color="#0F766E", linewidth=2)
+    ax.fill_between(steps, time_weighted, alpha=0.15, color="#0F766E")
+    ax.set_title("Time-Weighted Coverage")
+    ax.set_ylabel("Observed / Alive Time")
+    ax.set_ylim(-0.05, 1.1)
+    ax.grid(True, alpha=0.3)
+
+    # Detection latency histogram
+    ax = axes[2, 2]
+    if latencies:
+        bins = min(12, max(4, len(latencies)))
+        ax.hist(latencies, bins=bins, color="#6D28D9", alpha=0.78, edgecolor="white")
+        ax.axvline(np.mean(latencies), color="#111827", linestyle="--",
+                   linewidth=1.2, label=f"Mean {np.mean(latencies):.1f}")
+        ax.legend(fontsize=8)
+    else:
+        ax.text(0.5, 0.5, "No detections yet", ha="center", va="center",
+                transform=ax.transAxes, color="#64748B", fontsize=10)
+    ax.set_title("First-Detection Latency")
+    ax.set_xlabel("Timesteps after spawn")
+    ax.set_ylabel("Enemy Count")
+    ax.grid(True, alpha=0.3)
+
     for ax in axes.flat:
-        ax.set_xlabel("Timestep")
+        if not ax.get_xlabel():
+            ax.set_xlabel("Timestep")
 
     plt.tight_layout()
     if save_path:

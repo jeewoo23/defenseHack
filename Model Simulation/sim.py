@@ -27,15 +27,16 @@ from config import (
     ENEMY_SPAWN_Y_MIN, ENEMY_SPAWN_Y_MAX,
     ENEMY_SPAWN_Y_TOP_MIN, ENEMY_SPAWN_Y_TOP_MAX,
     ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX,
-    STRIKE_OBSERVATION_STEPS,
+    STRIKE_OBSERVATION_STEPS, SCORE_WEIGHTS, N_STEPS,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
 )
 
 from uav import UAV, UAVMode
 from world import BaseStation, Enemy, Terrain
 from graph import (build_comm_graph, get_connected_uav_ids,
-                   compute_isr_coverage, get_observed_enemy_ids)
-from optimizer import compute_objective, greedy_policy
+                   compute_coverage_from_observed, compute_flank_coverage,
+                   get_observed_enemy_ids)
+from optimizer import greedy_policy
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +54,61 @@ class StepMetrics:
     kills:         int    # UAVs killed by enemies this step
     strikes:       int    # enemies eliminated by FOB strike this step
     n_enemies:     int    # alive enemies at end of step
+    north_coverage: float | None = None
+    center_coverage: float | None = None
+    south_coverage: float | None = None
+    time_weighted_coverage: float = 0.0
+    avg_detection_latency: float | None = None
+    detection_latencies: list = field(default_factory=list)
+    relays_killed_total: int = 0
     role_counts:   dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Honest score helpers
+# ---------------------------------------------------------------------------
+def compute_time_weighted_coverage(enemies) -> float:
+    """Average fraction of alive-time each enemy has spent under observation."""
+    terms = [
+        e.observed_steps / e.alive_steps
+        for e in enemies
+        if e.alive_steps > 0
+    ]
+    return float(np.mean(terms)) if terms else 0.0
+
+
+def compute_avg_detection_latency(enemies) -> float | None:
+    """Average first-detection latency for enemies that have been detected."""
+    latencies = [
+        e.first_detection_step - e.spawn_step
+        for e in enemies
+        if e.spawn_step is not None and e.first_detection_step is not None
+    ]
+    return float(np.mean(latencies)) if latencies else None
+
+
+def compute_objective_score(enemies, uavs, history, conn_fraction, relays_killed_total) -> float:
+    """Run-to-date score that is less sensitive to enemy attrition timing."""
+    w = SCORE_WEIGHTS
+    twc = compute_time_weighted_coverage(enemies)
+
+    conn_terms = [m.conn_fraction for m in history] + [conn_fraction]
+    avg_conn = sum(conn_terms) / max(1, len(conn_terms))
+
+    avg_latency = compute_avg_detection_latency(enemies)
+    latency_for_score = avg_latency if avg_latency is not None else N_STEPS
+    latency_term = 1.0 - (latency_for_score / max(1, N_STEPS))
+    latency_term = max(0.0, min(1.0, latency_term))
+
+    uavs_lost = sum(1 for u in uavs if not u.alive)
+
+    return (
+        w["time_weighted_coverage"] * twc
+        + w["connectivity"] * avg_conn
+        + w["detection_latency"] * latency_term
+        - w["uav_loss_penalty"] * uavs_lost
+        - w["relay_loss_penalty"] * relays_killed_total
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +154,11 @@ class Simulation:
             eid += 1
 
         self.step_num:           int               = 0
+        for enemy in self.enemies:
+            enemy.spawn_step = self.step_num
+
         self.history:            list[StepMetrics] = []
-        self._prev_switch_total: int               = 0
+        self.relays_killed_total: int              = 0
 
         # Snapshot storage: list of (step, G, connected_ids) for selected steps
         self.snapshots: list[tuple] = []
@@ -122,6 +180,10 @@ class Simulation:
         for enemy in self.enemies:
             killed = enemy.attempt_kill(self.uavs)
             kills_this_step += len(killed)
+            self.relays_killed_total += sum(
+                1 for u in self.uavs
+                if u.id in killed and u.mode in (UAVMode.MOBILE_RELAY, UAVMode.STATIC_RELAY)
+            )
 
         # 3. Build initial graph
         G             = build_comm_graph(self.uavs, self.base, self.terrain)
@@ -166,6 +228,18 @@ class Simulation:
         observed = get_observed_enemy_ids(
             self.uavs, self.enemies, connected_ids, self.terrain
         )
+        observed_ids = set(observed)
+        isr_cov = compute_coverage_from_observed(self.enemies, observed_ids)
+        flank_coverage = compute_flank_coverage(self.enemies, observed_ids)
+
+        for enemy in self.enemies:
+            if not enemy.alive:
+                continue
+            enemy.alive_steps += 1
+            if enemy.id in observed_ids:
+                enemy.observed_steps += 1
+                if enemy.first_detection_step is None:
+                    enemy.first_detection_step = self.step_num
 
         strikes_this_step = 0
         for enemy in self.enemies:
@@ -188,17 +262,19 @@ class Simulation:
         alive_enemies = [e for e in self.enemies if e.alive]
         n_alive       = len(alive_uavs)
 
-        isr_cov    = compute_isr_coverage(self.uavs, self.enemies,
-                                          connected_ids, self.terrain)
         conn_frac  = len(connected_ids) / n_alive if n_alive else 0.0
         avg_bat    = np.mean([u.battery for u in alive_uavs]) if alive_uavs else 0.0
 
-        total_switches  = sum(u.switch_count for u in self.uavs)
-        switch_delta    = total_switches - self._prev_switch_total
-        self._prev_switch_total = total_switches
-
-        obj = compute_objective(self.uavs, self.enemies, connected_ids,
-                                self.terrain, isr_cov, switch_delta)
+        detection_latencies = [
+            e.first_detection_step - e.spawn_step
+            for e in self.enemies
+            if e.spawn_step is not None and e.first_detection_step is not None
+        ]
+        time_weighted_coverage = compute_time_weighted_coverage(self.enemies)
+        avg_detection_latency = float(np.mean(detection_latencies)) if detection_latencies else None
+        obj = compute_objective_score(
+            self.enemies, self.uavs, self.history, conn_frac, self.relays_killed_total
+        )
 
         role_counts = {
             "ISR":          sum(1 for u in alive_uavs if u.mode == UAVMode.ISR),
@@ -217,6 +293,13 @@ class Simulation:
             kills=kills_this_step,
             strikes=strikes_this_step,
             n_enemies=len(alive_enemies),
+            north_coverage=flank_coverage["north"],
+            center_coverage=flank_coverage["center"],
+            south_coverage=flank_coverage["south"],
+            time_weighted_coverage=time_weighted_coverage,
+            avg_detection_latency=avg_detection_latency,
+            detection_latencies=detection_latencies,
+            relays_killed_total=self.relays_killed_total,
             role_counts=role_counts,
         )
         self.history.append(metrics)

@@ -7,7 +7,7 @@ from config import (
     WORLD_SIZE, BASE_POS, BASE_COMM_RANGE,
     ENEMY_SPEED, ENEMY_KILL_RANGE,
     TERRAIN_MOD_MIN, TERRAIN_MOD_MAX,
-    ISR_SENSOR_RANGE,
+    ISR_SENSOR_RANGE, OBJECTIVE_HEALTH,
 )
 
 
@@ -44,6 +44,10 @@ class Enemy:
 
         self.alive           = True
         self.consecutive_obs = 0    # consecutive steps observed by connected ISR
+        self.spawn_step = None
+        self.first_detection_step = None
+        self.observed_steps = 0
+        self.alive_steps = 0
         # Centroid of detecting ISR UAVs set by sim at end of each step;
         # used by move() at the start of the next step so enemies react 1 step late.
         self._detecting_centroid: np.ndarray | None = None

@@ -39,6 +39,21 @@ ENEMY_SPEED      = 40.0    # m per timestep
 ENEMY_KILL_RANGE = 600.0   # kills Static Relay UAVs within this range
 ENEMY_THREAT_RANGE = 900.0  # Static Relay flees if enemy this close
 
+# --- Scenario layers ---
+SCENARIO_BASELINE = "baseline"
+SCENARIO_DUAL_OBJECTIVE = "dual_objective"
+DEFAULT_SCENARIO = SCENARIO_BASELINE
+
+# Undefended flank sites used by the dual-objective scenario. Enemies in the
+# corresponding y-band will try to reach and damage these sites unless detected.
+SECONDARY_OBJECTIVES = {
+    "North Site": [50.0, 9000.0],
+    "South Site": [50.0, 1000.0],
+}
+OBJECTIVE_HEALTH = 100.0
+OBJECTIVE_ATTACK_RANGE = 450.0
+OBJECTIVE_DAMAGE_PER_STEP = 1.5
+
 # --- RTB (Return to Base) ---
 RTB_BATTERY_THRESHOLD = 50.0   # UAV begins RTB when battery falls to this %
 RTB_ARRIVAL_DIST      = 300.0  # metres from base = "arrived"
@@ -73,6 +88,16 @@ W_ISR    = 3.0
 W_CONN   = 2.0
 W_ENERGY = 0.5
 W_SWITCH = 0.1
+
+# Honest scoring weights. These score policy quality over the run instead of
+# rewarding abrupt coverage jumps caused by enemy attrition.
+SCORE_WEIGHTS = {
+    "time_weighted_coverage": 3.0,
+    "connectivity": 1.0,
+    "detection_latency": 2.0,
+    "uav_loss_penalty": 1.5,
+    "relay_loss_penalty": 2.0,
+}
 
 # --- Simulation ---
 N_UAVS         = 10
