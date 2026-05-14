@@ -21,6 +21,23 @@ class BaseStation:
 
 
 # ---------------------------------------------------------------------------
+# Critical objective
+# ---------------------------------------------------------------------------
+class CriticalObjective:
+    def __init__(self, name: str, pos, health: float = OBJECTIVE_HEALTH):
+        self.name = name
+        self.pos = np.array(pos, dtype=float)
+        self.health = float(health)
+
+    @property
+    def alive(self) -> bool:
+        return self.health > 0
+
+    def take_damage(self, amount: float) -> None:
+        self.health = max(0.0, self.health - amount)
+
+
+# ---------------------------------------------------------------------------
 # Enemy
 # ---------------------------------------------------------------------------
 class Enemy:
@@ -37,10 +54,12 @@ class Enemy:
 
     PATROL_RADIUS = 700.0    # max wander distance from spawn when not hunting
 
-    def __init__(self, enemy_id: int, pos):
+    def __init__(self, enemy_id: int, pos, target_name: str | None = None, target_pos=None):
         self.id            = enemy_id
         self.pos           = np.array(pos, dtype=float)
         self.patrol_center = self.pos.copy()   # home point for idle patrol
+        self.target_name   = target_name
+        self.target_pos    = None if target_pos is None else np.array(target_pos, dtype=float)
 
         self.alive           = True
         self.consecutive_obs = 0    # consecutive steps observed by connected ISR
@@ -67,6 +86,15 @@ class Enemy:
                 direction = direction / dist
             self.pos += direction * ENEMY_SPEED
             self.pos  = np.clip(self.pos, 0.0, WORLD_SIZE)
+            return
+
+        if self.target_pos is not None:
+            direction = self.target_pos - self.pos
+            dist = np.linalg.norm(direction)
+            if dist > 1.0:
+                step = min(ENEMY_SPEED, dist)
+                self.pos += (direction / dist) * step
+            self.pos = np.clip(self.pos, 0.0, WORLD_SIZE)
             return
 
         from uav import UAVMode

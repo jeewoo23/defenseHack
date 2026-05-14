@@ -28,11 +28,13 @@ from config import (
     ENEMY_SPAWN_Y_TOP_MIN, ENEMY_SPAWN_Y_TOP_MAX,
     ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX,
     STRIKE_OBSERVATION_STEPS, SCORE_WEIGHTS, N_STEPS,
+    DEFAULT_SCENARIO, SCENARIO_DUAL_OBJECTIVE, SECONDARY_OBJECTIVES,
+    OBJECTIVE_ATTACK_RANGE, OBJECTIVE_DAMAGE_PER_STEP,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
 )
 
 from uav import UAV, UAVMode
-from world import BaseStation, Enemy, Terrain
+from world import BaseStation, CriticalObjective, Enemy, Terrain
 from graph import (build_comm_graph, get_connected_uav_ids,
                    compute_coverage_from_observed, compute_flank_coverage,
                    get_observed_enemy_ids)
@@ -61,6 +63,8 @@ class StepMetrics:
     avg_detection_latency: float | None = None
     detection_latencies: list = field(default_factory=list)
     relays_killed_total: int = 0
+    objective_health: dict = field(default_factory=dict)
+    objectives_alive: int = 0
     role_counts:   dict = field(default_factory=dict)
 
 
@@ -121,11 +125,19 @@ class Simulation:
         n_enemies:      int = N_ENEMIES,
         n_enemies_flank: int = N_ENEMIES_FLANK,
         seed:           int = SIM_SEED,
+        scenario:       str = DEFAULT_SCENARIO,
     ):
         rng = np.random.RandomState(seed)
 
         self.terrain  = Terrain(size=WORLD_SIZE, seed=seed)
         self.base     = BaseStation(pos=BASE_POS)
+        self.scenario = scenario
+        self.objectives: list[CriticalObjective] = []
+        if self.scenario == SCENARIO_DUAL_OBJECTIVE:
+            self.objectives = [
+                CriticalObjective(name, pos)
+                for name, pos in SECONDARY_OBJECTIVES.items()
+            ]
 
         # UAVs start clustered near the base station
         self.uavs: list[UAV] = []
@@ -136,6 +148,7 @@ class Simulation:
 
         # Enemies spawn far from base — relay chain must extend to reach them
         self.enemies: list[Enemy] = []
+        objective_by_name = {o.name: o.pos for o in self.objectives}
         eid = 0
         for _ in range(n_enemies):
             pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
@@ -145,12 +158,22 @@ class Simulation:
         for _ in range(n_enemies_flank):
             pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
                    rng.uniform(ENEMY_SPAWN_Y_TOP_MIN, ENEMY_SPAWN_Y_TOP_MAX)]
-            self.enemies.append(Enemy(enemy_id=eid, pos=pos))
+            self.enemies.append(Enemy(
+                enemy_id=eid,
+                pos=pos,
+                target_name="North Site" if self.scenario == SCENARIO_DUAL_OBJECTIVE else None,
+                target_pos=objective_by_name.get("North Site"),
+            ))
             eid += 1
         for _ in range(n_enemies_flank):
             pos = [rng.uniform(ENEMY_SPAWN_X_MIN, ENEMY_SPAWN_X_MAX),
                    rng.uniform(ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX)]
-            self.enemies.append(Enemy(enemy_id=eid, pos=pos))
+            self.enemies.append(Enemy(
+                enemy_id=eid,
+                pos=pos,
+                target_name="South Site" if self.scenario == SCENARIO_DUAL_OBJECTIVE else None,
+                target_pos=objective_by_name.get("South Site"),
+            ))
             eid += 1
 
         self.step_num:           int               = 0
@@ -174,6 +197,15 @@ class Simulation:
         # 1. Enemies move (detection centroid was set at end of previous step)
         for enemy in self.enemies:
             enemy.move(self.uavs)
+
+        # 1b. Scenario objectives take damage from enemies that reach them.
+        if self.objectives:
+            for enemy in self.enemies:
+                if not enemy.alive:
+                    continue
+                for objective in self.objectives:
+                    if objective.alive and np.linalg.norm(enemy.pos - objective.pos) <= OBJECTIVE_ATTACK_RANGE:
+                        objective.take_damage(OBJECTIVE_DAMAGE_PER_STEP)
 
         # 2. Enemy kill attempts (only alive enemies)
         kills_this_step = 0
@@ -300,6 +332,8 @@ class Simulation:
             avg_detection_latency=avg_detection_latency,
             detection_latencies=detection_latencies,
             relays_killed_total=self.relays_killed_total,
+            objective_health={o.name: o.health for o in self.objectives},
+            objectives_alive=sum(1 for o in self.objectives if o.alive),
             role_counts=role_counts,
         )
         self.history.append(metrics)
@@ -323,6 +357,9 @@ class Simulation:
                 "enemy_obs":     [e.consecutive_obs for e in self.enemies],
                 "edges":         list(G.edges()),
                 "connected_ids": set(connected_ids),
+                "objective_name": [o.name for o in self.objectives],
+                "objective_pos":  [o.pos.copy() for o in self.objectives],
+                "objective_health": [o.health for o in self.objectives],
                 "metrics":       metrics,
             })
 

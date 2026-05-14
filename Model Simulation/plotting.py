@@ -17,6 +17,19 @@ _MODE_COLOR  = {UAVMode.ISR: "#2196F3", UAVMode.MOBILE_RELAY: "#4CAF50", UAVMode
 _MODE_MARKER = {UAVMode.ISR: "o",       UAVMode.MOBILE_RELAY: "^",       UAVMode.STATIC_RELAY: "D"}
 
 
+def _draw_objectives(ax, objectives):
+    for obj in objectives:
+        name = obj["name"]
+        pos = np.asarray(obj["pos"], dtype=float)
+        health = float(obj["health"])
+        color = "#0F172A" if health > 0 else "#6B7280"
+        ax.scatter(*pos, s=260, facecolors="none", edgecolors=color,
+                   marker="o", linewidths=2.2, zorder=7)
+        ax.scatter(*pos, s=80, c=color, marker="P", zorder=8)
+        ax.annotate(f"{name}\n{health:.0f}%", pos + np.array([140, 110]),
+                    fontsize=8, color=color, fontweight="bold", zorder=9)
+
+
 # ---------------------------------------------------------------------------
 # Single-step map snapshot
 # ---------------------------------------------------------------------------
@@ -66,6 +79,12 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
     ax.scatter(*sim.base.pos, s=350, c="black", marker="s", zorder=6)
     ax.annotate("Base", sim.base.pos + np.array([120, 120]),
                 fontsize=8, fontweight="bold", color="black")
+
+    if getattr(sim, "objectives", None):
+        _draw_objectives(ax, [
+            {"name": o.name, "pos": o.pos, "health": o.health}
+            for o in sim.objectives
+        ])
 
     # --- UAVs ---
     for uav in sim.uavs:
@@ -137,6 +156,11 @@ def plot_metrics(history, save_path: str | None = None):
     south_cov     = [np.nan if m.south_coverage  is None else m.south_coverage  for m in history]
     time_weighted = [m.time_weighted_coverage for m in history]
     latencies     = history[-1].detection_latencies if history else []
+    objective_names = list(history[-1].objective_health.keys()) if history and history[-1].objective_health else []
+    objective_health = {
+        name: [m.objective_health.get(name, np.nan) for m in history]
+        for name in objective_names
+    }
     total_uav_kills   = np.cumsum([m.kills   for m in history])
     total_strikes     = np.cumsum([m.strikes for m in history])
 
@@ -209,9 +233,13 @@ def plot_metrics(history, save_path: str | None = None):
     ax = axes[1, 2]
     ax.plot(steps, avg_bat, color="#FF9800", linewidth=2)
     ax.fill_between(steps, avg_bat, alpha=0.15, color="#FF9800")
+    objective_colors = ["#0F172A", "#7C3AED", "#B91C1C"]
+    for idx, (name, values) in enumerate(objective_health.items()):
+        ax.plot(steps, values, color=objective_colors[idx % len(objective_colors)],
+                linewidth=1.6, linestyle="--", label=name)
     ax.axhline(20, color="red", linewidth=1, linestyle="--", alpha=0.6, label="Critical (20%)")
-    ax.set_title("Average Battery Level")
-    ax.set_ylabel("Battery (%)")
+    ax.set_title("Battery & Objective Health")
+    ax.set_ylabel("Percent")
     ax.set_ylim(-2, 105)
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
@@ -318,6 +346,15 @@ def create_animation(sim, save_path: str = "aeris_animation.gif",
         ax.scatter(*sim.base.pos, s=350, c="black", marker="s", zorder=6)
         ax.annotate("Base", sim.base.pos + np.array([120, 120]),
                     fontsize=8, fontweight="bold", color="black")
+
+        objective_names = frame_data.get("objective_name", [])
+        objective_positions = frame_data.get("objective_pos", [])
+        objective_health = frame_data.get("objective_health", [])
+        if objective_names:
+            _draw_objectives(ax, [
+                {"name": name, "pos": pos, "health": health}
+                for name, pos, health in zip(objective_names, objective_positions, objective_health)
+            ])
 
         # UAVs
         uav_rtb_list = frame_data.get("uav_rtb", [False] * len(frame_data["uav_id"]))
