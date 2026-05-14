@@ -81,6 +81,33 @@ def compute_isr_coverage(uavs, enemies, connected_ids: set, terrain) -> float:
     return len(covered) / len(alive_enemies)
 
 
+def compute_coverage_from_observed(enemies, observed_enemy_ids) -> float:
+    """Fraction of alive enemies in observed_enemy_ids."""
+    alive_enemies = [e for e in enemies if e.alive]
+    if not alive_enemies:
+        return 1.0
+    observed_ids = set(observed_enemy_ids)
+    covered = sum(1 for e in alive_enemies if e.id in observed_ids)
+    return covered / len(alive_enemies)
+
+
+def compute_flank_coverage(enemies, observed_enemy_ids) -> dict:
+    """Return north/center/south coverage fractions for alive enemies."""
+    observed_ids = set(observed_enemy_ids)
+
+    north = [e for e in enemies if e.alive and e.pos[1] > 6500]
+    south = [e for e in enemies if e.alive and e.pos[1] < 3500]
+    center = [e for e in enemies if e.alive and 3500 <= e.pos[1] <= 6500]
+
+    def frac(group):
+        if not group:
+            return None
+        observed = sum(1 for e in group if e.id in observed_ids)
+        return observed / len(group)
+
+    return {"north": frac(north), "center": frac(center), "south": frac(south)}
+
+
 def get_observed_enemy_ids(uavs, enemies, connected_ids: set, terrain) -> dict:
     """
     For each alive enemy observed by a connected ISR UAV, return a mapping

@@ -7,7 +7,7 @@ from config import (
     WORLD_SIZE, BASE_POS, BASE_COMM_RANGE,
     ENEMY_SPEED, ENEMY_KILL_RANGE,
     TERRAIN_MOD_MIN, TERRAIN_MOD_MAX,
-    ISR_SENSOR_RANGE,
+    ISR_SENSOR_RANGE, OBJECTIVE_HEALTH,
 )
 
 
@@ -18,6 +18,23 @@ class BaseStation:
     def __init__(self, pos=None):
         self.pos        = np.array(pos if pos is not None else BASE_POS, dtype=float)
         self.comm_range = BASE_COMM_RANGE
+
+
+# ---------------------------------------------------------------------------
+# Critical objective
+# ---------------------------------------------------------------------------
+class CriticalObjective:
+    def __init__(self, name: str, pos, health: float = OBJECTIVE_HEALTH):
+        self.name = name
+        self.pos = np.array(pos, dtype=float)
+        self.health = float(health)
+
+    @property
+    def alive(self) -> bool:
+        return self.health > 0
+
+    def take_damage(self, amount: float) -> None:
+        self.health = max(0.0, self.health - amount)
 
 
 # ---------------------------------------------------------------------------
@@ -37,13 +54,19 @@ class Enemy:
 
     PATROL_RADIUS = 700.0    # max wander distance from spawn when not hunting
 
-    def __init__(self, enemy_id: int, pos):
+    def __init__(self, enemy_id: int, pos, target_name: str | None = None, target_pos=None):
         self.id            = enemy_id
         self.pos           = np.array(pos, dtype=float)
         self.patrol_center = self.pos.copy()   # home point for idle patrol
+        self.target_name   = target_name
+        self.target_pos    = None if target_pos is None else np.array(target_pos, dtype=float)
 
         self.alive           = True
         self.consecutive_obs = 0    # consecutive steps observed by connected ISR
+        self.spawn_step = None
+        self.first_detection_step = None
+        self.observed_steps = 0
+        self.alive_steps = 0
         # Centroid of detecting ISR UAVs set by sim at end of each step;
         # used by move() at the start of the next step so enemies react 1 step late.
         self._detecting_centroid: np.ndarray | None = None
@@ -63,6 +86,15 @@ class Enemy:
                 direction = direction / dist
             self.pos += direction * ENEMY_SPEED
             self.pos  = np.clip(self.pos, 0.0, WORLD_SIZE)
+            return
+
+        if self.target_pos is not None:
+            direction = self.target_pos - self.pos
+            dist = np.linalg.norm(direction)
+            if dist > 1.0:
+                step = min(ENEMY_SPEED, dist)
+                self.pos += (direction / dist) * step
+            self.pos = np.clip(self.pos, 0.0, WORLD_SIZE)
             return
 
         from uav import UAVMode
@@ -113,7 +145,7 @@ class Enemy:
 # Terrain
 # ---------------------------------------------------------------------------
 class Terrain:
-    """
+    """ 
     Smooth terrain using a superposition of Gaussian hills and valleys.
     Returns a modifier in [TERRAIN_MOD_MIN, TERRAIN_MOD_MAX] at any position.
     Higher modifier = better comm/sensor range (favorable high ground).

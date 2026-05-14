@@ -20,6 +20,9 @@ from config import (
     MAX_NEW_RELAYS_PER_STEP, N_ISR_RESERVE,
     ENEMY_SPAWN_X_MAX, BASE_POS,
     W_ISR, W_CONN, W_ENERGY, W_SWITCH,
+    ENABLE_BRANCHING_CHAIN, MAX_BRANCHES, BRANCH_TRIGGER_MIN_ENEMIES,
+    NORTH_FLANK_Y_THRESHOLD, SOUTH_FLANK_Y_THRESHOLD, RELAY_BUDGET_FRACTION,
+    CHAIN_HOP_RANGE, MIN_WAYPOINTS_PER_BRANCH, MAX_WAYPOINTS_PER_BRANCH,
 )
 
 # Relay must be within this distance of its assigned waypoint before going static.
@@ -57,17 +60,146 @@ def _relay_chain_targets(base_pos, target_pos, n_relays: int) -> list:
     ]
 
 
+def _enemy_band(enemy) -> str:
+    if enemy.pos[1] > NORTH_FLANK_Y_THRESHOLD:
+        return "north"
+    if enemy.pos[1] < SOUTH_FLANK_Y_THRESHOLD:
+        return "south"
+    return "center"
+
+
+def _target_for_cluster(enemies) -> np.ndarray:
+    enemy_centroid = np.mean([e.pos for e in enemies], axis=0)
+    target_positions = [
+        np.asarray(e.target_pos, dtype=float)
+        for e in enemies
+        if getattr(e, "target_pos", None) is not None
+    ]
+    if target_positions:
+        objective_centroid = np.mean(target_positions, axis=0)
+        # Defend the approach corridor, not the objective's doorstep.
+        return 0.65 * enemy_centroid + 0.35 * objective_centroid
+    return enemy_centroid
+
+
+def _cluster_enemies_by_band(enemies) -> dict:
+    clusters = {"center": [], "north": [], "south": []}
+    for enemy in enemies:
+        clusters[_enemy_band(enemy)].append(enemy)
+    return {
+        band: members
+        for band, members in clusters.items()
+        if len(members) >= BRANCH_TRIGGER_MIN_ENEMIES
+    }
+
+
+def _branch_priority(name: str) -> int:
+    return {"center": 0, "north": 1, "south": 2}.get(name, 3)
+
+
+def _has_objective_target(enemies) -> bool:
+    return any(getattr(e, "target_pos", None) is not None for e in enemies)
+
+
+def _branch_weight(enemies) -> float:
+    if not enemies:
+        return 0.0
+    objective_members = [
+        e for e in enemies
+        if getattr(e, "target_pos", None) is not None
+    ]
+    if not objective_members:
+        return float(len(enemies))
+    urgency = sum(
+        8_000.0 / max(1_000.0, np.linalg.norm(e.pos - e.target_pos))
+        for e in objective_members
+    )
+    return float(len(enemies)) + urgency
+
+
+def _branch_waypoints(base_pos, enemies, relay_budget: int) -> list:
+    """
+    Build adaptive waypoint branches toward active enemy bands/objective sites.
+    Falls back to the original centerline chain when threats are not split.
+    """
+    if relay_budget <= 0:
+        return []
+
+    fallback_target = np.array([ENEMY_SPAWN_X_MAX, BASE_POS[1]], dtype=float)
+    if not ENABLE_BRANCHING_CHAIN or not enemies:
+        n_relays = max(2, min(5, int(
+            max(0.0, np.linalg.norm(fallback_target - base_pos) - 2_000.0) / CHAIN_HOP_RANGE
+        ) + 1))
+        return _relay_chain_targets(base_pos, fallback_target, min(n_relays, relay_budget))
+
+    clusters = _cluster_enemies_by_band(enemies)
+    if not clusters:
+        return _relay_chain_targets(base_pos, fallback_target, min(2, relay_budget))
+
+    active = sorted(
+        clusters.items(),
+        key=lambda item: (
+            0 if _has_objective_target(item[1]) else 1,
+            _branch_priority(item[0]),
+            -len(item[1]),
+        ),
+    )[:MAX_BRANCHES]
+
+    branches = []
+    for name, members in active:
+        target = _target_for_cluster(members)
+        dist = np.linalg.norm(target - base_pos)
+        n_waypoints = int(max(MIN_WAYPOINTS_PER_BRANCH, dist / CHAIN_HOP_RANGE))
+        n_waypoints = min(MAX_WAYPOINTS_PER_BRANCH, n_waypoints)
+        branches.append({
+            "name": name,
+            "target": target,
+            "n_waypoints": n_waypoints,
+            "weight": max(1.0, _branch_weight(members)),
+        })
+
+    total_requested = sum(b["n_waypoints"] for b in branches)
+    if total_requested <= relay_budget:
+        allocations = {b["name"]: b["n_waypoints"] for b in branches}
+    else:
+        allocations = {}
+        remaining = relay_budget
+        total_weight = sum(b["weight"] for b in branches)
+        for b in branches:
+            share = max(1, round(relay_budget * b["weight"] / total_weight))
+            share = min(share, b["n_waypoints"], remaining)
+            allocations[b["name"]] = share
+            remaining -= share
+        while remaining > 0:
+            candidates = [b for b in branches if allocations[b["name"]] < b["n_waypoints"]]
+            if not candidates:
+                break
+            best = max(candidates, key=lambda b: b["weight"])
+            allocations[best["name"]] += 1
+            remaining -= 1
+
+    waypoints = []
+    for branch in sorted(branches, key=lambda b: _branch_priority(b["name"])):
+        count = allocations.get(branch["name"], 0)
+        waypoints.extend(_relay_chain_targets(base_pos, branch["target"], count))
+    return waypoints
+
+
 def _assign_relays_to_targets(relay_uavs, targets: list) -> dict:
     """
-    Match relay UAVs to chain targets in distance-sorted order.
-    Closest relay (by distance from map origin) maps to closest target.
+    Greedily match each target to the nearest unassigned relay.
     """
     if not relay_uavs or not targets:
         return {}
-    origin   = np.zeros(2)
-    r_sorted = sorted(relay_uavs, key=lambda u: np.linalg.norm(u.pos - origin))
-    t_sorted = sorted(targets,    key=lambda p: np.linalg.norm(p  - origin))
-    return {r.id: t for r, t in zip(r_sorted, t_sorted)}
+    remaining = list(relay_uavs)
+    assignment = {}
+    for target in targets:
+        if not remaining:
+            break
+        best = min(remaining, key=lambda u: np.linalg.norm(u.pos - target))
+        assignment[best.id] = target
+        remaining.remove(best)
+    return assignment
 
 
 def _wp_covered(wp, static_relays) -> bool:
@@ -83,24 +215,21 @@ def _wp_covered(wp, static_relays) -> bool:
 # ---------------------------------------------------------------------------
 def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     from uav import UAVMode
-    alive = [u for u in uavs if u.alive]
+    alive = [u for u in uavs if u.alive and not u.rtb
+             and u.recharge_steps_remaining == 0]
     if not alive:
         return
 
     base_pos = np.array(base.pos, dtype=float)
 
     # ------------------------------------------------------------------
-    # 2. Fixed strategic chain target = far edge of enemy spawn zone.
-    #    A fixed target keeps waypoint positions stable for the full sim.
+    # 2. Adaptive branch targets. Split relay waypoints across active
+    #    north/center/south threat bands, falling back to the old centerline
+    #    chain when the situation is not multi-axis.
     # ------------------------------------------------------------------
-    target_pos = np.array([ENEMY_SPAWN_X_MAX, BASE_POS[1]], dtype=float)
-
-    chain_dist    = max(0.0, np.linalg.norm(target_pos - base_pos) - base.comm_range)
-    HOP_RANGE     = 1_300.0
-    n_relays_need = max(2, min(5, int(chain_dist / HOP_RANGE) + 1))
-    n_relays_need = min(n_relays_need, max(1, len(alive) // 2))
-
-    relay_targets  = _relay_chain_targets(base_pos, target_pos, n_relays_need)
+    relay_budget = int(max(1, len(alive) * RELAY_BUDGET_FRACTION))
+    relay_budget = min(relay_budget, max(1, len(alive) - N_ISR_RESERVE))
+    relay_targets = _branch_waypoints(base_pos, enemies, relay_budget)
     static_relays  = [u for u in alive if u.mode == UAVMode.STATIC_RELAY]
     mobile_relays  = [u for u in alive if u.mode == UAVMode.MOBILE_RELAY]
 
@@ -110,7 +239,8 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     # ------------------------------------------------------------------
     # 3. Promote ISR UAVs to fill open slots that have no mobile relay
     # ------------------------------------------------------------------
-    n_short = max(0, len(open_waypoints) - len(mobile_relays))
+    relay_slots = max(0, relay_budget - len(static_relays) - len(mobile_relays))
+    n_short = min(max(0, len(open_waypoints) - len(mobile_relays)), relay_slots)
     if n_short > 0:
         all_isr  = sorted([u for u in alive if u.mode == UAVMode.ISR],
                           key=lambda u: u.battery)
@@ -166,11 +296,44 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
                      if u.mode in (UAVMode.MOBILE_RELAY, UAVMode.STATIC_RELAY)}
     relay_uavs    = [u for u in alive if u.id in relay_set]
 
-    # Greedy one-to-one matching
+    # Band-aware matching: seed one ISR per active threat band, then fill the
+    # rest greedily. This keeps flank pressure from being starved by centerline
+    # nearest-neighbor assignments.
     remaining_enemy_idx = list(range(len(enemies)))
+    remaining_isr = list(isr_connected)
     isr_target: dict[int, int] = {}
 
-    for uav in sorted(isr_connected,
+    active_bands = sorted(
+        {_enemy_band(enemy) for enemy in enemies},
+        key=lambda band: (
+            0 if any(
+                _enemy_band(e) == band and getattr(e, "target_pos", None) is not None
+                for e in enemies
+            ) else 1,
+            min(
+                (
+                    np.linalg.norm(e.pos - e.target_pos)
+                    for e in enemies
+                    if _enemy_band(e) == band and getattr(e, "target_pos", None) is not None
+                ),
+                default=float("inf"),
+            ),
+            _branch_priority(band),
+        ),
+    )
+    band_order = active_bands or ["center", "north", "south"]
+    for band in band_order:
+        band_indices = [i for i in remaining_enemy_idx if _enemy_band(enemies[i]) == band]
+        if not band_indices or not remaining_isr:
+            continue
+        band_center = np.mean([enemies[i].pos for i in band_indices], axis=0)
+        uav = min(remaining_isr, key=lambda u: np.linalg.norm(u.pos - band_center))
+        best_idx = min(band_indices, key=lambda i: np.linalg.norm(uav.pos - enemies[i].pos))
+        isr_target[uav.id] = best_idx
+        remaining_isr.remove(uav)
+        remaining_enemy_idx.remove(best_idx)
+
+    for uav in sorted(remaining_isr,
                       key=lambda u: min(
                           (np.linalg.norm(u.pos - enemies[i].pos)
                            for i in remaining_enemy_idx),
