@@ -29,7 +29,7 @@ from config import (
     ENEMY_SPAWN_Y_BOT_MIN, ENEMY_SPAWN_Y_BOT_MAX,
     STRIKE_OBSERVATION_STEPS, SCORE_WEIGHTS, N_STEPS,
     DEFAULT_SCENARIO, SCENARIO_DUAL_OBJECTIVE, SECONDARY_OBJECTIVES,
-    OBJECTIVE_ATTACK_RANGE, OBJECTIVE_DAMAGE_PER_STEP,
+    OBJECTIVE_ATTACK_RANGE, OBJECTIVE_DAMAGE_PER_STEP, OBJECTIVE_HEALTH,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
 )
 
@@ -91,7 +91,9 @@ def compute_avg_detection_latency(enemies) -> float | None:
     return float(np.mean(latencies)) if latencies else None
 
 
-def compute_objective_score(enemies, uavs, history, conn_fraction, relays_killed_total) -> float:
+def compute_objective_score(
+    enemies, uavs, history, conn_fraction, relays_killed_total, objectives=None
+) -> float:
     """Run-to-date score that is less sensitive to enemy attrition timing."""
     w = SCORE_WEIGHTS
     twc = compute_time_weighted_coverage(enemies)
@@ -105,13 +107,21 @@ def compute_objective_score(enemies, uavs, history, conn_fraction, relays_killed
     latency_term = max(0.0, min(1.0, latency_term))
 
     uavs_lost = sum(1 for u in uavs if not u.alive)
+    objectives = objectives or []
+    objective_health = (
+        np.mean([o.health / OBJECTIVE_HEALTH for o in objectives])
+        if objectives else 0.0
+    )
+    objectives_lost = sum(1 for o in objectives if not o.alive)
 
     return (
         w["time_weighted_coverage"] * twc
         + w["connectivity"] * avg_conn
         + w["detection_latency"] * latency_term
+        + w["objective_health"] * objective_health
         - w["uav_loss_penalty"] * uavs_lost
         - w["relay_loss_penalty"] * relays_killed_total
+        - w["objective_loss_penalty"] * objectives_lost
     )
 
 
@@ -305,7 +315,8 @@ class Simulation:
         time_weighted_coverage = compute_time_weighted_coverage(self.enemies)
         avg_detection_latency = float(np.mean(detection_latencies)) if detection_latencies else None
         obj = compute_objective_score(
-            self.enemies, self.uavs, self.history, conn_frac, self.relays_killed_total
+            self.enemies, self.uavs, self.history, conn_frac,
+            self.relays_killed_total, self.objectives
         )
 
         role_counts = {

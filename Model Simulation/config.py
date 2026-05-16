@@ -61,7 +61,7 @@ RTB_RECHARGE_STEPS    = 10     # steps spent at base before redeploying at 100%
 
 # --- Greedy policy thresholds ---
 MAX_NEW_RELAYS_PER_STEP = 1   # cap simultaneous ISR->relay promotions
-N_ISR_RESERVE           = 2   # highest-battery ISR UAVs exempt from promotion
+N_ISR_RESERVE           = 3   # highest-battery ISR UAVs exempt from promotion
 # Relays go static if enemy is farther than this.  Set above ENEMY_KILL_RANGE
 # but do NOT set equal to ENEMY_THREAT_RANGE or the relay oscillates.
 # With enemy spawn at x>=3000 and relay 1 at ~x=1700, separation is ~1300m -> safe.
@@ -79,6 +79,14 @@ RELAY_BUDGET_FRACTION = 0.7
 CHAIN_HOP_RANGE = 1_300.0
 MIN_WAYPOINTS_PER_BRANCH = 1
 MAX_WAYPOINTS_PER_BRANCH = 3
+OBJECTIVE_INTERCEPT_DISTANCE = 2_400.0
+OBJECTIVE_MIN_INTERCEPT_DISTANCE = 1_300.0
+OBJECTIVE_URGENCY_BUFFER_STEPS = 15
+OBJECTIVE_BRANCH_URGENCY_WEIGHT = 6.0
+ENABLE_PERSISTENT_ISR_WATCH = False
+OBJECTIVE_WATCH_FRACTION = 0.75
+OBJECTIVE_WATCH_SENSOR_MARGIN = 0.9
+OBJECTIVE_WATCH_HOLD_SENSOR_FRACTION = 0.85
 
 # --- Enemy spawn zone ---
 # Enemies spawn far from base (x=6000-9000) to give allied forces time to set up
@@ -108,6 +116,8 @@ SCORE_WEIGHTS = {
     "detection_latency": 2.0,
     "uav_loss_penalty": 1.5,
     "relay_loss_penalty": 2.0,
+    "objective_health": 3.0,
+    "objective_loss_penalty": 5.0,
 }
 
 # --- Simulation ---

@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 from config import (
     ISR_SENSOR_RANGE, ISR_COMM_RANGE, UAV_MAX_SPEED,
+    ENEMY_SPEED, STRIKE_OBSERVATION_STEPS,
     MIN_ENEMY_DIST_FOR_STATIC, STEPS_MOBILE_BEFORE_STATIC,
     STATIC_BATTERY_THRESHOLD,
     MAX_NEW_RELAYS_PER_STEP, N_ISR_RESERVE,
@@ -23,6 +24,11 @@ from config import (
     ENABLE_BRANCHING_CHAIN, MAX_BRANCHES, BRANCH_TRIGGER_MIN_ENEMIES,
     NORTH_FLANK_Y_THRESHOLD, SOUTH_FLANK_Y_THRESHOLD, RELAY_BUDGET_FRACTION,
     CHAIN_HOP_RANGE, MIN_WAYPOINTS_PER_BRANCH, MAX_WAYPOINTS_PER_BRANCH,
+    OBJECTIVE_INTERCEPT_DISTANCE, OBJECTIVE_MIN_INTERCEPT_DISTANCE,
+    OBJECTIVE_URGENCY_BUFFER_STEPS, OBJECTIVE_BRANCH_URGENCY_WEIGHT,
+    ENABLE_PERSISTENT_ISR_WATCH,
+    OBJECTIVE_WATCH_FRACTION, OBJECTIVE_WATCH_SENSOR_MARGIN,
+    OBJECTIVE_WATCH_HOLD_SENSOR_FRACTION,
 )
 
 # Relay must be within this distance of its assigned waypoint before going static.
@@ -70,14 +76,12 @@ def _enemy_band(enemy) -> str:
 
 def _target_for_cluster(enemies) -> np.ndarray:
     enemy_centroid = np.mean([e.pos for e in enemies], axis=0)
-    target_positions = [
-        np.asarray(e.target_pos, dtype=float)
-        for e in enemies
+    objective_members = [
+        e for e in enemies
         if getattr(e, "target_pos", None) is not None
     ]
-    if target_positions:
-        objective_centroid = np.mean(target_positions, axis=0)
-        # Defend the approach corridor, not the objective's doorstep.
+    if objective_members:
+        objective_centroid = np.mean([e.target_pos for e in objective_members], axis=0)
         return 0.65 * enemy_centroid + 0.35 * objective_centroid
     return enemy_centroid
 
@@ -101,6 +105,63 @@ def _has_objective_target(enemies) -> bool:
     return any(getattr(e, "target_pos", None) is not None for e in enemies)
 
 
+def _time_to_objective(enemy) -> float:
+    if getattr(enemy, "target_pos", None) is None:
+        return float("inf")
+    return np.linalg.norm(enemy.pos - enemy.target_pos) / max(1.0, ENEMY_SPEED)
+
+
+def _objective_urgency(enemy) -> float:
+    tti = _time_to_objective(enemy)
+    if not np.isfinite(tti):
+        return 0.0
+    critical_window = STRIKE_OBSERVATION_STEPS + OBJECTIVE_URGENCY_BUFFER_STEPS
+    return critical_window / max(1.0, tti)
+
+
+def _objective_intercept_point(enemy) -> np.ndarray:
+    objective_pos = np.asarray(enemy.target_pos, dtype=float)
+    direction = np.asarray(enemy.pos, dtype=float) - objective_pos
+    dist = np.linalg.norm(direction)
+    if dist < 1.0:
+        return objective_pos.copy()
+    direction = direction / dist
+    intercept_dist = min(
+        OBJECTIVE_INTERCEPT_DISTANCE,
+        max(OBJECTIVE_MIN_INTERCEPT_DISTANCE, dist * 0.35),
+    )
+    return objective_pos + direction * min(intercept_dist, dist)
+
+
+def _objective_watch_point(enemies) -> np.ndarray:
+    objective_members = [
+        e for e in enemies
+        if getattr(e, "target_pos", None) is not None
+    ]
+    if not objective_members:
+        return _target_for_cluster(enemies)
+
+    enemy_centroid = np.mean([e.pos for e in objective_members], axis=0)
+    objective_centroid = np.mean([e.target_pos for e in objective_members], axis=0)
+    direction = enemy_centroid - objective_centroid
+    dist = np.linalg.norm(direction)
+    if dist < 1.0:
+        return objective_centroid.copy()
+    direction = direction / dist
+    watch_dist = min(
+        OBJECTIVE_INTERCEPT_DISTANCE,
+        max(OBJECTIVE_MIN_INTERCEPT_DISTANCE, dist * OBJECTIVE_WATCH_FRACTION),
+    )
+    return objective_centroid + direction * min(watch_dist, dist)
+
+
+def _should_use_objective_watch(enemy, watch_point, sensor_range: float) -> bool:
+    if getattr(enemy, "target_pos", None) is None:
+        return False
+    critical_window = STRIKE_OBSERVATION_STEPS + OBJECTIVE_URGENCY_BUFFER_STEPS
+    return _time_to_objective(enemy) > critical_window
+
+
 def _branch_weight(enemies) -> float:
     if not enemies:
         return 0.0
@@ -110,11 +171,8 @@ def _branch_weight(enemies) -> float:
     ]
     if not objective_members:
         return float(len(enemies))
-    urgency = sum(
-        8_000.0 / max(1_000.0, np.linalg.norm(e.pos - e.target_pos))
-        for e in objective_members
-    )
-    return float(len(enemies)) + urgency
+    urgency = sum(_objective_urgency(e) for e in objective_members)
+    return float(len(enemies)) + OBJECTIVE_BRANCH_URGENCY_WEIGHT * urgency
 
 
 def _branch_waypoints(base_pos, enemies, relay_budget: int) -> list:
@@ -302,6 +360,7 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     remaining_enemy_idx = list(range(len(enemies)))
     remaining_isr = list(isr_connected)
     isr_target: dict[int, int] = {}
+    isr_watch_target: dict[int, np.ndarray] = {}
 
     active_bands = sorted(
         {_enemy_band(enemy) for enemy in enemies},
@@ -322,14 +381,60 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
         ),
     )
     band_order = active_bands or ["center", "north", "south"]
+
+    # Persistent objective watchers: reserve one ISR per objective-threat band.
+    # These scouts hold a reachable point on the enemy-to-site lane so coverage
+    # can begin as soon as the relay branch catches up.
+    if ENABLE_PERSISTENT_ISR_WATCH:
+        watch_candidates = list(remaining_isr)
+        claimed_watchers: set[int] = set()
+        for band in band_order:
+            band_indices = [
+                i for i, enemy in enumerate(enemies)
+                if _enemy_band(enemy) == band
+                and getattr(enemy, "target_pos", None) is not None
+            ]
+            if not band_indices:
+                continue
+            available_watchers = [
+                u for u in watch_candidates
+                if u.id not in claimed_watchers
+            ]
+            if not available_watchers:
+                break
+
+            watch_point = _objective_watch_point([enemies[i] for i in band_indices])
+            uav = min(available_watchers, key=lambda u: np.linalg.norm(u.pos - watch_point))
+            best_idx = min(
+                band_indices,
+                key=lambda i: (
+                    _time_to_objective(enemies[i]),
+                    np.linalg.norm(enemies[i].pos - watch_point),
+                ),
+            )
+            isr_target[uav.id] = best_idx
+            isr_watch_target[uav.id] = watch_point
+            claimed_watchers.add(uav.id)
+            if uav in remaining_isr:
+                remaining_isr.remove(uav)
+            if best_idx in remaining_enemy_idx:
+                remaining_enemy_idx.remove(best_idx)
+
     for band in band_order:
         band_indices = [i for i in remaining_enemy_idx if _enemy_band(enemies[i]) == band]
         if not band_indices or not remaining_isr:
             continue
-        band_center = np.mean([enemies[i].pos for i in band_indices], axis=0)
+        band_center = _target_for_cluster([enemies[i] for i in band_indices])
         uav = min(remaining_isr, key=lambda u: np.linalg.norm(u.pos - band_center))
         best_idx = min(band_indices, key=lambda i: np.linalg.norm(uav.pos - enemies[i].pos))
         isr_target[uav.id] = best_idx
+        if (
+            ENABLE_PERSISTENT_ISR_WATCH
+            and any(getattr(enemies[i], "target_pos", None) is not None for i in band_indices)
+        ):
+            isr_watch_target[uav.id] = _objective_watch_point(
+                [enemies[i] for i in band_indices]
+            )
         remaining_isr.remove(uav)
         remaining_enemy_idx.remove(best_idx)
 
@@ -360,8 +465,16 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
         enemy      = enemies[isr_target[uav.id]]
         mod        = terrain.get_modifier(uav.pos)
         sens_range = ISR_SENSOR_RANGE * mod
-        if np.linalg.norm(uav.pos - enemy.pos) <= sens_range * 0.85:
+        hold_range = sens_range * OBJECTIVE_WATCH_HOLD_SENSOR_FRACTION
+        if np.linalg.norm(uav.pos - enemy.pos) <= hold_range:
             continue   # within observation range — hold
+
+        move_target = enemy.pos
+        watch_target = isr_watch_target.get(uav.id)
+        if watch_target is not None and _should_use_objective_watch(
+            enemy, watch_target, sens_range
+        ):
+            move_target = watch_target
 
         if relay_uavs:
             nearest_relay = min(relay_uavs,
@@ -371,10 +484,17 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
             isr_range     = ISR_COMM_RANGE * terrain.get_modifier(uav.pos)
             max_link      = max(relay_range, isr_range)
             dist_to_relay = np.linalg.norm(uav.pos - nearest_relay.pos)
-            if dist_to_relay > max_link - _LINK_SAFETY_MARGIN:
+            moving_farther_from_relay = (
+                np.linalg.norm(np.asarray(move_target, dtype=float) - nearest_relay.pos)
+                > dist_to_relay
+            )
+            if (
+                dist_to_relay > max_link - _LINK_SAFETY_MARGIN
+                and moving_farther_from_relay
+            ):
                 continue   # advancing would risk disconnecting next step
 
-        uav.move_toward(enemy.pos)
+        uav.move_toward(move_target)
 
     # Disconnected ISR UAVs retreat toward nearest relay
     for uav in isr_disconn:

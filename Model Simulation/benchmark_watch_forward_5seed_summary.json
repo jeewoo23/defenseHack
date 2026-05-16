@@ -1,0 +1,80 @@
+{
+  "scenario": "dual_objective",
+  "branching": "on",
+  "seeds": 5,
+  "steps": 500,
+  "summary": {
+    "final_objective": {
+      "mean": -28.961144621784037,
+      "std": 0.05934397606200494,
+      "p25": -28.97445,
+      "p75": -28.9272
+    },
+    "final_isr_coverage": {
+      "mean": 0.06666666666666667,
+      "std": 0.13333333333333333,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.5,
+      "std": 0.15811388300841897,
+      "p25": 0.5,
+      "p75": 0.5
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.028343062579925325,
+      "std": 0.016486224131924018,
+      "p25": 0.010400000000000001,
+      "p75": 0.04051531289962663
+    },
+    "final_avg_detection_latency": {
+      "mean": 170.2052380952381,
+      "std": 26.235944359165604,
+      "p25": 156.0,
+      "p75": 191.53333333333333
+    },
+    "final_uavs_alive": {
+      "mean": 4.0,
+      "std": 0.0,
+      "p25": 4.0,
+      "p75": 4.0
+    },
+    "final_enemies_remaining": {
+      "mean": 14.4,
+      "std": 1.2,
+      "p25": 15.0,
+      "p75": 15.0
+    },
+    "total_strikes": {
+      "mean": 0.6,
+      "std": 1.2,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "total_uav_kills": {
+      "mean": 6.0,
+      "std": 0.0,
+      "p25": 6.0,
+      "p75": 6.0
+    },
+    "north_site_health": {
+      "mean": 0.0,
+      "std": 0.0,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "south_site_health": {
+      "mean": 0.0,
+      "std": 0.0,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "mean_objective_health": {
+      "mean": 0.0,
+      "std": 0.0,
+      "p25": 0.0,
+      "p75": 0.0
+    }
+  }
+}

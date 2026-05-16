@@ -1,0 +1,205 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+
+% Upload with this .tex:
+% aeris_dual_objective_snapshots.png
+% benchmark_dual_on_5seed.png
+
+\title{AERIS Project Update: Greedy ISR/Relay Optimization and Final Plan}
+
+\author{
+\IEEEauthorblockN{Jeewoo Choi}
+\IEEEauthorblockA{Stanford University\\jchoi23@stanford.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+AERIS studies autonomous UAV role allocation for resilient ISR (Intelligence, Surveillance, and Reconnaissance). 
+This project aims to increase mesh networking ISR efforts with a multi-modal UAV system,
+where UAVs are capable of switching between three different modes: ISR, mobile relay, and static relay.
+This multi-modal system allows the system to increase effective range, allowing each UAV to 
+allocate a higher amount of energy for greater bandwidth as the UAVs are in static relay mode while
+remaining flexible with its ISR and mobile relay modes.
+Since the proposal, it has become a benchmarkable graph testbed with connected ISR
+scoring, adaptive relay branching, dual-objective threats, and multi-seed
+evaluation. The current controller is a greedy heuristic proof of concept; the
+final phase will implement a finite-horizon optimizer that evaluates candidate
+UAV assignments before acting.
+\end{abstract}
+
+\section{Introduction}
+The project addresses a core problem in contested ISR: surveillance is valuable
+only if observations reach the operator. UAVs must decide when to sense, relay,
+hold, or return to base while enemies move and links change. AERIS frames this
+as online optimization over roles, relay placement, coverage, energy, and risk.
+
+\section{Project Goal}
+The original AERIS objective is to coordinate UAVs that switch between ISR,
+mobile relay, and static relay modes. ISR observations have mission value only
+when the UAV has a path back to base, so sensing and connectivity must be
+optimized jointly:
+\begin{equation}
+\max \; w_1 C_{\text{ISR}} + w_2 C_{\text{conn}}
+- w_3 E - w_4 W_{\text{op}} - w_5 N_{\text{switch}}.
+\end{equation}
+Here $C_{\text{ISR}}$ is connected ISR coverage, $C_{\text{conn}}$ is
+connectivity, $E$ is energy use, $W_{\text{op}}$ is operator burden, and
+$N_{\text{switch}}$ penalizes role changes.
+
+\section{Completed Work}
+The simulator now implements the main ingredients for evaluation. UAVs move,
+consume battery, return to base, recharge, and switch among ISR, mobile relay,
+and static relay modes. Each timestep rebuilds the communication graph; ISR
+observations count only if connected to base.
+
+The evaluation layer now tracks time-weighted coverage, detection latency, flank
+coverage, UAV losses, strikes, connectivity, and objective health. A
+dual-objective scenario with undefended north and south sites forces multi-axis
+behavior, and a benchmark runner evaluates policies over multiple seeds.
+
+\begin{table}[t]
+\centering
+\caption{Current implementation status.}
+\label{tab:status}
+\begin{tabular}{p{0.36\linewidth}p{0.53\linewidth}}
+\toprule
+Component & Status \\
+\midrule
+Graph connectivity & Implemented; ISR only counts when connected to base. \\
+Role switching & ISR, mobile relay, static relay, RTB, and recharge implemented. \\
+Adaptive branching & Implemented with north/center/south enemy clustering. \\
+Mission metrics & Detection latency, time-weighted coverage, connectivity, strikes, losses, objective health. \\
+Benchmarking & Multi-seed benchmark plots and summary tables. \\
+Current optimizer & Greedy heuristic proof of concept. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Current Optimizer}
+The current controller is a \textbf{greedy heuristic optimizer}. It uses
+optimization principles, but not a formal future-horizon algorithm. At each
+timestep, it allocates a relay budget, clusters enemies, assigns relay
+waypoints, promotes relays when needed, and assigns connected ISR UAVs to nearby
+or urgent enemies.
+
+This behavior is useful because it proves that autonomous role allocation and
+relay-supported ISR can work in the simulation. However, the policy is still
+local and reactive. It does not compare future action sequences, solve a
+constrained assignment problem, or explicitly optimize against predicted
+objective damage.
+
+The controller is therefore a one-step approximation to the larger optimization
+problem. It uses local criteria such as waypoint distance, enemy band, battery
+reserve, and objective urgency, but these proxies are not optimized jointly. The
+final controller should reason about tradeoffs explicitly by asking which
+candidate action produces the best predicted mission state over a short horizon.
+
+\section{Findings}
+Adaptive branching improves the realism of the demo by allowing the UAV network
+to respond to north and south threats. However, the secondary objectives still
+often reach zero health. The current controller can eventually detect and strike
+enemies, but it often does not detect objective-bound enemies early enough.
+
+A persistent ISR watch policy was also tested. It performed worse than the
+default greedy branching policy because UAVs loitered too passively and failed
+to maintain decisive connected observation. This negative result is useful: it
+shows that additional hand-tuned heuristics are unlikely to be enough.
+
+\section{Example Output}
+Fig.~\ref{fig:snapshots} shows the current dual-objective simulation output.
+Blue UAVs perform ISR, green UAVs act as mobile relays, and orange UAVs act as
+static relays. The north and south sites create visible multi-axis pressure on
+the relay network, making the scenario useful for evaluating whether the
+optimizer is doing more than building a single centerline chain.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{aeris_dual_objective_snapshots.png}
+\caption{Snapshot output from the dual-objective scenario. The visualization
+shows UAV role switching, relay formation, enemy motion, and the north/south
+objectives used to test multi-axis behavior.}
+\label{fig:snapshots}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Five-seed persistent watch comparison.}
+\label{tab:watch}
+\begin{tabular}{lcc}
+\toprule
+Metric & Watch Off & Watch On \\
+\midrule
+Final objective & -17.90 & -27.97 \\
+Total strikes & 9.40 & 0.20 \\
+UAVs alive & 7.00 & 4.20 \\
+Enemies remaining & 5.60 & 14.80 \\
+North site health & 0.00 & 0.00 \\
+South site health & 0.00 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{benchmark_dual_on_5seed.png}
+\caption{Five-seed benchmark for the adaptive branching controller. The
+benchmarking framework now exposes variance, failure modes, and policy tradeoffs.}
+\label{fig:benchmark}
+\end{figure}
+
+\section{Final Optimization Plan}
+The final phase will replace or augment the greedy policy with a
+\textbf{finite-horizon discrete optimizer}. At each decision point, the system
+will generate a small set of candidate actions, simulate them forward over a
+short horizon $H$, score them, execute the first action of the best candidate,
+and then replan.
+
+Candidate policies will include the current branching behavior, north/south
+intercept, split flank intercept, relay repair, and finishing already-detected
+enemies. The proposed finite-horizon score is:
+\begin{equation}
+\begin{aligned}
+J = &\;\alpha C_{\text{ISR}} + \beta C_{\text{conn}}
++ \gamma H_{\text{obj}} + \eta S_{\text{strike}} \\
+&- \lambda D_{\text{obj}} - \mu L_{\text{detect}}
+- \rho L_{\text{UAV}} - \psi E_{\text{battery}}.
+\end{aligned}
+\end{equation}
+This objective rewards connected coverage, connectivity, objective health, and
+successful strikes while penalizing predicted objective damage, detection delay,
+UAV loss, and battery cost.
+
+The implementation will stay deliberately small: instead of optimizing every
+continuous UAV trajectory, it will optimize over a finite set of high-level
+decisions. This keeps the problem computationally manageable while making the
+final system meaningfully optimization-driven.
+
+\section{Two-Week Plan}
+In week one, the focus will be implementing the finite-horizon scoring function,
+candidate rollout logic, and emergency intercept behavior. In week two, the
+greedy baseline and finite-horizon optimizer will be benchmarked across seeds,
+and the final report will compare objective survival, detection latency,
+strikes, UAV losses, and mission score.
+
+The minimum final deliverable will be a direct benchmark between the current
+greedy controller and the finite-horizon controller. The desired result is not
+perfect defense of every objective, but a measurable improvement in at least one
+of the key mission metrics: higher objective health, lower detection latency,
+more strikes, or a better final objective score. If time remains, the assignment
+step can be upgraded from greedy matching to a small cost-matrix assignment
+method.
+
+\section{Conclusion}
+AERIS has reached a working proof-of-concept stage. The current greedy
+heuristic optimizer demonstrates role switching, connected ISR, adaptive relay
+branching, and benchmarkable metrics. Next, finite-horizon candidate evaluation
+should make the optimization explicit and show measurable improvement over the
+greedy baseline.
+
+\end{document}

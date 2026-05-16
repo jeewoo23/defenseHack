@@ -47,7 +47,7 @@ def run_scenario(scenario: str, prefix: str, animate_every: int) -> Simulation:
 
     print("\nGenerating output plots...")
 
-    plot_snapshots_grid(sim, save_path=f"{prefix}_snapshots.png")
+    plot_snapshots_grid(sim, save_path=f"{prefix}_snapshots.png", nrows=2, ncols=3)
     plot_metrics(sim.history, save_path=f"{prefix}_metrics.png")
     create_animation(sim, save_path=f"{prefix}_animation.gif", fps=8)
 

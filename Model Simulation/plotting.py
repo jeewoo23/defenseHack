@@ -449,15 +449,18 @@ def create_animation(sim, save_path: str = "aeris_animation.gif",
 # ---------------------------------------------------------------------------
 # Multi-snapshot grid
 # ---------------------------------------------------------------------------
-def plot_snapshots_grid(sim, save_path: str | None = None):
+def plot_snapshots_grid(sim, save_path: str | None = None,
+                        nrows: int | None = None, ncols: int | None = None):
     """Render all stored snapshots in a grid layout."""
     snaps = sim.snapshots
     if not snaps:
         print("No snapshots recorded.")
         return None
 
-    ncols = min(len(snaps), 5)
-    nrows = (len(snaps) + ncols - 1) // ncols
+    if ncols is None:
+        ncols = min(len(snaps), 5)
+    if nrows is None:
+        nrows = (len(snaps) + ncols - 1) // ncols
     fig, axes = plt.subplots(nrows, ncols,
                               figsize=(6 * ncols, 6 * nrows))
     if nrows == 1 and ncols == 1:
