@@ -39,6 +39,11 @@ from graph import (build_comm_graph, get_connected_uav_ids,
                    compute_coverage_from_observed, compute_flank_coverage,
                    get_observed_enemy_ids)
 from optimizer import greedy_policy
+import horizon_optimizer
+
+POLICY_GREEDY = "greedy"
+POLICY_HORIZON = "horizon"
+VALID_POLICIES = (POLICY_GREEDY, POLICY_HORIZON)
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +141,15 @@ class Simulation:
         n_enemies_flank: int = N_ENEMIES_FLANK,
         seed:           int = SIM_SEED,
         scenario:       str = DEFAULT_SCENARIO,
+        policy:         str = POLICY_GREEDY,
     ):
+        if policy not in VALID_POLICIES:
+            raise ValueError(f"policy must be one of {VALID_POLICIES}, got {policy!r}")
+        self.policy = policy
+        # Receding-horizon controller state (only used when policy == horizon).
+        self._horizon_selected: horizon_optimizer.Candidate | None = None
+        self._horizon_steps_since_replan: int = 0
+        self._horizon_history: list[str] = []
         rng = np.random.RandomState(seed)
 
         self.terrain  = Terrain(size=WORLD_SIZE, seed=seed)
@@ -231,10 +244,26 @@ class Simulation:
         G             = build_comm_graph(self.uavs, self.base, self.terrain)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
-        # 4. Greedy policy (modifies modes and positions); pass only alive enemies
+        # 4. Policy step (modifies modes and positions); pass only alive enemies
         alive_enemies = [e for e in self.enemies if e.alive]
-        greedy_policy(self.uavs, connected_ids,
-                      alive_enemies, self.base, self.terrain, G)
+        if self.policy == POLICY_HORIZON:
+            replan_now = (
+                self._horizon_selected is None
+                or self._horizon_steps_since_replan >= horizon_optimizer.REPLAN_EVERY
+            )
+            if replan_now:
+                self._horizon_selected = horizon_optimizer.select_candidate(self)
+                self._horizon_steps_since_replan = 0
+            self._horizon_steps_since_replan += 1
+            self._horizon_history.append(self._horizon_selected.name)
+            horizon_optimizer.apply_with_overrides(
+                self._horizon_selected,
+                self.uavs, connected_ids, alive_enemies,
+                self.base, self.terrain, G,
+            )
+        else:
+            greedy_policy(self.uavs, connected_ids,
+                          alive_enemies, self.base, self.terrain, G)
 
         # 5. RTB movement and recharge
         _base_arr = np.array(BASE_POS, dtype=float)

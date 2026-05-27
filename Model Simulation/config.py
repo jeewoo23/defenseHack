@@ -88,6 +88,27 @@ OBJECTIVE_WATCH_FRACTION = 0.75
 OBJECTIVE_WATCH_SENSOR_MARGIN = 0.9
 OBJECTIVE_WATCH_HOLD_SENSOR_FRACTION = 0.85
 
+# --- Emergency intercept ---
+# When an objective-bound enemy is within this many steps of reaching its
+# objective, claim the nearest connected ISR to chase it directly (bypasses the
+# normal band-aware round-robin so urgent threats are not deferred).
+ENABLE_EMERGENCY_INTERCEPT = False
+EMERGENCY_INTERCEPT_TTI_THRESHOLD = 40.0
+
+# --- Proactive objective defense ---
+# Reserve a relay chain + forward-station ISR per objective, positioned along
+# the enemy's approach corridor so the ISR's sensor footprint catches
+# objective-bound enemies before they arrive. The chain extends along
+# (base -> station) so the station ISR stays connected. Costs (relays+ISR)
+# UAVs per objective.
+ENABLE_OBJECTIVE_DEFENSE = False
+# Station sits this many metres back along the enemy approach axis from the
+# objective (i.e., between objective and enemy spawn zone).
+OBJECTIVE_DEFENSE_STATION_OFFSET = 2000.0
+# Number of relays in each defensive chain (base -> station). Two keeps the
+# UAV budget tight enough that branching can still cover the center band.
+OBJECTIVE_DEFENSE_RELAY_COUNT = 2
+
 # --- Enemy spawn zone ---
 # Enemies spawn far from base (x=6000-9000) to give allied forces time to set up
 # the relay chain before enemies close in.  Tight y-band keeps all enemies inside
@@ -121,9 +142,13 @@ SCORE_WEIGHTS = {
 }
 
 # --- Simulation ---
-N_UAVS         = 10
-N_ENEMIES      = 5    # center band
-N_ENEMIES_FLANK = 5   # per flank (top + bottom)
+# Rebalanced so forward objective defense is structurally viable:
+# 14 UAVs leaves enough budget to staff two defensive chains (6 UAVs total)
+# AND keep center/branching coverage. 3 + 3 + 3 = 9 enemies keeps the strike
+# load below the per-ISR strike-window throughput.
+N_UAVS         = 14
+N_ENEMIES      = 3    # center band
+N_ENEMIES_FLANK = 3   # per flank (top + bottom)
 SIM_SEED  = 42
 N_STEPS   = 500
 

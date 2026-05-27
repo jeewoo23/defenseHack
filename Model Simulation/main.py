@@ -15,7 +15,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from sim import Simulation
+from sim import Simulation, POLICY_GREEDY, POLICY_HORIZON, VALID_POLICIES
 from plotting import plot_snapshots_grid, plot_metrics, create_animation
 from config import (
     DEFAULT_SCENARIO, N_STEPS, N_UAVS, N_ENEMIES, N_ENEMIES_FLANK,
@@ -35,14 +35,16 @@ def run_scenario(
     prefix: str,
     animate_every: int,
     output_dir: Path = IMAGE_OUTPUT_DIR,
+    policy: str = POLICY_GREEDY,
 ) -> Simulation:
     print("=" * 60)
     print("  AERIS: Autonomous Relay-Enabled ISR System")
     print(f"  Scenario: {scenario}")
+    print(f"  Policy:   {policy}")
     print("  Simulation starting...")
     print("=" * 60)
 
-    sim = Simulation(scenario=scenario)
+    sim = Simulation(scenario=scenario, policy=policy)
 
     print(f"\nRunning {N_STEPS} steps  (snapshot at steps: {SNAPSHOT_STEPS})\n")
     sim.run(
@@ -112,11 +114,22 @@ def main():
         default=2,
         help="Record every Nth step as an animation frame.",
     )
+    parser.add_argument(
+        "--policy",
+        choices=VALID_POLICIES,
+        default=POLICY_GREEDY,
+        help="Control policy: greedy heuristic or finite-horizon optimizer.",
+    )
     parser.add_argument("--no-show", action="store_true", help="Skip plt.show().")
     args = parser.parse_args()
 
     prefix = args.prefix or _default_prefix(args.scenario)
-    run_scenario(args.scenario, prefix, max(1, args.animate_every), args.output_dir)
+    if args.policy == POLICY_HORIZON and args.prefix is None:
+        prefix = f"{prefix}_horizon"
+    run_scenario(
+        args.scenario, prefix, max(1, args.animate_every),
+        args.output_dir, policy=args.policy,
+    )
 
     if not args.no_show:
         plt.show()

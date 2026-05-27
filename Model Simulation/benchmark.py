@@ -25,7 +25,7 @@ from config import (
     DEFAULT_SCENARIO, N_STEPS, OBJECTIVE_HEALTH,
     SCENARIO_BASELINE, SCENARIO_DUAL_OBJECTIVE,
 )
-from sim import Simulation
+from sim import Simulation, POLICY_GREEDY, POLICY_HORIZON, VALID_POLICIES
 
 
 OUTPUT_ROOT = Path("outputs")
@@ -83,6 +83,18 @@ def _set_persistent_watch(persistent_watch: str) -> None:
     optimizer.ENABLE_PERSISTENT_ISR_WATCH = persistent_watch == "on"
 
 
+def _set_emergency_intercept(emergency_intercept: str) -> None:
+    if emergency_intercept == "config":
+        return
+    optimizer.ENABLE_EMERGENCY_INTERCEPT = emergency_intercept == "on"
+
+
+def _set_objective_defense(objective_defense: str) -> None:
+    if objective_defense == "config":
+        return
+    optimizer.ENABLE_OBJECTIVE_DEFENSE = objective_defense == "on"
+
+
 def _extract_metrics(history) -> dict[str, list[float]]:
     metrics = {key: [] for key in SERIES_KEYS}
     strikes = 0
@@ -112,13 +124,16 @@ def _extract_metrics(history) -> dict[str, list[float]]:
     return metrics
 
 
-def _run_one(args: tuple[int, str, str, str, int]) -> dict:
-    seed, scenario, branching, persistent_watch, steps = args
+def _run_one(args: tuple[int, str, str, str, str, str, str, int]) -> dict:
+    (seed, scenario, branching, persistent_watch, emergency_intercept,
+     objective_defense, policy, steps) = args
     _set_branching(branching)
     _set_persistent_watch(persistent_watch)
+    _set_emergency_intercept(emergency_intercept)
+    _set_objective_defense(objective_defense)
     np.random.seed(seed)
 
-    sim = Simulation(seed=seed, scenario=scenario)
+    sim = Simulation(seed=seed, scenario=scenario, policy=policy)
     sim.run(n_steps=steps, verbose=False)
     metrics = _extract_metrics(sim.history)
     final = sim.history[-1]
@@ -150,12 +165,16 @@ def run_benchmark(
     scenario: str = DEFAULT_SCENARIO,
     branching: str = "config",
     persistent_watch: str = "config",
+    emergency_intercept: str = "config",
+    objective_defense: str = "config",
+    policy: str = POLICY_GREEDY,
     seeds: int = 20,
     steps: int = N_STEPS,
     workers: int = 1,
 ) -> list[dict]:
     jobs = [
-        (seed, scenario, branching, persistent_watch, steps)
+        (seed, scenario, branching, persistent_watch, emergency_intercept,
+         objective_defense, policy, steps)
         for seed in range(seeds)
     ]
     if workers > 1:
@@ -267,8 +286,18 @@ def print_summary(summary: dict) -> None:
         )
 
 
-def _default_prefix(scenario: str, branching: str, persistent_watch: str) -> str:
-    return f"benchmark_{scenario}_{branching}_watch_{persistent_watch}"
+def _default_prefix(
+    scenario: str, branching: str, persistent_watch: str,
+    emergency_intercept: str, objective_defense: str, policy: str,
+) -> str:
+    base = f"benchmark_{scenario}_{branching}_watch_{persistent_watch}"
+    if emergency_intercept != "config":
+        base += f"_intercept_{emergency_intercept}"
+    if objective_defense != "config":
+        base += f"_defense_{objective_defense}"
+    if policy != POLICY_GREEDY:
+        base += f"_policy_{policy}"
+    return base
 
 
 def main() -> None:
@@ -289,6 +318,24 @@ def main() -> None:
         choices=["config", "on", "off"],
         default="config",
         help="Override persistent objective-lane ISR watch behavior.",
+    )
+    parser.add_argument(
+        "--emergency-intercept",
+        choices=["config", "on", "off"],
+        default="config",
+        help="Override emergency objective-bound enemy intercept behavior.",
+    )
+    parser.add_argument(
+        "--objective-defense",
+        choices=["config", "on", "off"],
+        default="config",
+        help="Reserve a relay chain + forward ISR per objective.",
+    )
+    parser.add_argument(
+        "--policy",
+        choices=VALID_POLICIES,
+        default=POLICY_GREEDY,
+        help="Control policy: greedy heuristic or finite-horizon optimizer.",
     )
     parser.add_argument("--seeds", type=int, default=20)
     parser.add_argument("--steps", type=int, default=N_STEPS)
@@ -325,17 +372,25 @@ def main() -> None:
         args.scenario,
         args.branching,
         args.persistent_watch,
+        args.emergency_intercept,
+        args.objective_defense,
+        args.policy,
     )
     print(
         f"Running benchmark: scenario={args.scenario}, branching={args.branching}, "
-        f"persistent_watch={args.persistent_watch}, seeds={args.seeds}, "
-        f"steps={args.steps}, workers={args.workers}"
+        f"persistent_watch={args.persistent_watch}, "
+        f"emergency_intercept={args.emergency_intercept}, "
+        f"objective_defense={args.objective_defense}, policy={args.policy}, "
+        f"seeds={args.seeds}, steps={args.steps}, workers={args.workers}"
     )
 
     results = run_benchmark(
         scenario=args.scenario,
         branching=args.branching,
         persistent_watch=args.persistent_watch,
+        emergency_intercept=args.emergency_intercept,
+        objective_defense=args.objective_defense,
+        policy=args.policy,
         seeds=args.seeds,
         steps=args.steps,
         workers=args.workers,
@@ -361,6 +416,9 @@ def main() -> None:
         "scenario": args.scenario,
         "branching": args.branching,
         "persistent_watch": args.persistent_watch,
+        "emergency_intercept": args.emergency_intercept,
+        "objective_defense": args.objective_defense,
+        "policy": args.policy,
         "seeds": args.seeds,
         "steps": args.steps,
         "summary": summary,

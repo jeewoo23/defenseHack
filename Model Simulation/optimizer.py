@@ -29,6 +29,9 @@ from config import (
     ENABLE_PERSISTENT_ISR_WATCH,
     OBJECTIVE_WATCH_FRACTION, OBJECTIVE_WATCH_SENSOR_MARGIN,
     OBJECTIVE_WATCH_HOLD_SENSOR_FRACTION,
+    ENABLE_EMERGENCY_INTERCEPT, EMERGENCY_INTERCEPT_TTI_THRESHOLD,
+    ENABLE_OBJECTIVE_DEFENSE, OBJECTIVE_DEFENSE_STATION_OFFSET,
+    OBJECTIVE_DEFENSE_RELAY_COUNT,
 )
 
 # Relay must be within this distance of its assigned waypoint before going static.
@@ -260,6 +263,61 @@ def _assign_relays_to_targets(relay_uavs, targets: list) -> dict:
     return assignment
 
 
+def _objective_defense_plan(base_pos: np.ndarray, enemies):
+    """
+    For each objective targeted by an enemy, return:
+      - relay_waypoints: positions for a relay chain from base to a forward
+        station on the enemy approach axis
+      - stations: {key: station_pos} for the forward ISR holding position
+      - station_enemy: {key: enemy_index} most-urgent objective-bound enemy
+
+    Approach axis is taken as the line from the objective to the centroid of
+    its targeting enemies (i.e., we point the station at where the enemies
+    are actually coming from, not blindly toward base).
+    """
+    target_keyed: dict = {}
+    for idx, enemy in enumerate(enemies):
+        if getattr(enemy, "target_pos", None) is None:
+            continue
+        key = getattr(enemy, "target_name", None) or tuple(np.asarray(enemy.target_pos, dtype=float).round(2))
+        if key not in target_keyed:
+            target_keyed[key] = {
+                "target_pos": np.asarray(enemy.target_pos, dtype=float),
+                "enemy_indices": [],
+            }
+        target_keyed[key]["enemy_indices"].append(idx)
+
+    relay_waypoints: list = []
+    stations: dict = {}
+    station_enemy: dict = {}
+
+    for key, info in target_keyed.items():
+        target_pos = info["target_pos"]
+        enemy_indices = info["enemy_indices"]
+        if not enemy_indices:
+            continue
+        enemy_centroid = np.mean([enemies[i].pos for i in enemy_indices], axis=0)
+        approach = enemy_centroid - target_pos
+        approach_dist = np.linalg.norm(approach)
+        if approach_dist < 1.0:
+            unit = np.array([1.0, 0.0])  # default eastward
+        else:
+            unit = approach / approach_dist
+
+        station = target_pos + unit * OBJECTIVE_DEFENSE_STATION_OFFSET
+        # Build the relay chain from base out to the station.
+        chain_relays = _relay_chain_targets(
+            base_pos, station, OBJECTIVE_DEFENSE_RELAY_COUNT
+        )
+        relay_waypoints.extend(chain_relays)
+        stations[key] = station
+        station_enemy[key] = min(
+            enemy_indices, key=lambda i: _time_to_objective(enemies[i])
+        )
+
+    return relay_waypoints, stations, station_enemy
+
+
 def _wp_covered(wp, static_relays) -> bool:
     """True if any static relay is sitting at this waypoint."""
     return any(
@@ -287,7 +345,18 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     # ------------------------------------------------------------------
     relay_budget = int(max(1, len(alive) * RELAY_BUDGET_FRACTION))
     relay_budget = min(relay_budget, max(1, len(alive) - N_ISR_RESERVE))
-    relay_targets = _branch_waypoints(base_pos, enemies, relay_budget)
+
+    defense_waypoints: list = []
+    defense_stations: dict = {}
+    defense_enemy_for_station: dict = {}
+    if ENABLE_OBJECTIVE_DEFENSE:
+        defense_waypoints, defense_stations, defense_enemy_for_station = \
+            _objective_defense_plan(base_pos, enemies)
+        defense_waypoints = defense_waypoints[:relay_budget]
+
+    remaining_branch_budget = max(0, relay_budget - len(defense_waypoints))
+    branch_waypoints = _branch_waypoints(base_pos, enemies, remaining_branch_budget)
+    relay_targets = list(defense_waypoints) + list(branch_waypoints)
     static_relays  = [u for u in alive if u.mode == UAVMode.STATIC_RELAY]
     mobile_relays  = [u for u in alive if u.mode == UAVMode.MOBILE_RELAY]
 
@@ -328,6 +397,14 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
     # ------------------------------------------------------------------
     # 5. Upgrade Mobile Relays → Static once at assigned waypoint
     # ------------------------------------------------------------------
+    # Defense relays are kept mobile on purpose: they sit in the flank
+    # corridors where center enemies migrate to hunt static relays, and
+    # mobile relays cannot be killed by ENEMY.attempt_kill. The slightly
+    # faster drain (1.4x vs 0.6x) is accepted as the cost.
+    defense_waypoint_keys = {
+        (round(float(wp[0]), 2), round(float(wp[1]), 2))
+        for wp in defense_waypoints
+    }
     for uav in mobile_relays:
         if uav.steps_in_mode < STEPS_MOBILE_BEFORE_STATIC:
             continue
@@ -336,7 +413,10 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
         if uav.id not in connected_ids:
             continue
         if uav.id in assignment:
-            if np.linalg.norm(uav.pos - assignment[uav.id]) > _WAYPOINT_ARRIVAL_DIST:
+            wp = assignment[uav.id]
+            if (round(float(wp[0]), 2), round(float(wp[1]), 2)) in defense_waypoint_keys:
+                continue  # defense slot: stay mobile so we cannot be killed
+            if np.linalg.norm(uav.pos - wp) > _WAYPOINT_ARRIVAL_DIST:
                 continue   # still en route — don't lock in yet
         min_e = min((np.linalg.norm(uav.pos - e.pos) for e in enemies),
                     default=float("inf"))
@@ -381,6 +461,45 @@ def greedy_policy(uavs, connected_ids: set, enemies, base, terrain, G) -> None:
         ),
     )
     band_order = active_bands or ["center", "north", "south"]
+
+    # Objective defense: assign one connected ISR per objective and lock it to
+    # the most urgent objective-bound enemy on that lane. The ISR is the one
+    # nearest the forward station (so it starts in the right place) but it
+    # chases its enemy continuously rather than anchoring -- this keeps the
+    # sensor on the target through the enemy's retreat reaction so the 20-step
+    # consecutive observation needed for a strike can accumulate.
+    if ENABLE_OBJECTIVE_DEFENSE and defense_stations and remaining_isr:
+        for key, station in defense_stations.items():
+            if not remaining_isr:
+                break
+            enemy_idx = defense_enemy_for_station.get(key)
+            if enemy_idx is None or enemy_idx not in remaining_enemy_idx:
+                continue
+            uav = min(remaining_isr,
+                      key=lambda u: np.linalg.norm(u.pos - station))
+            isr_target[uav.id] = enemy_idx
+            remaining_isr.remove(uav)
+            remaining_enemy_idx.remove(enemy_idx)
+
+    # Emergency intercept: for objective-bound enemies inside the TTI threshold,
+    # claim the nearest connected ISR before the band-aware round-robin runs.
+    # The intercepting ISR goes straight at the enemy (no watch_target), trading
+    # broad coverage for sustained detection of the most urgent threat.
+    if ENABLE_EMERGENCY_INTERCEPT and remaining_isr:
+        urgent_pairs = [
+            (i, enemies[i]) for i in list(remaining_enemy_idx)
+            if getattr(enemies[i], "target_pos", None) is not None
+            and _time_to_objective(enemies[i]) < EMERGENCY_INTERCEPT_TTI_THRESHOLD
+        ]
+        urgent_pairs.sort(key=lambda pair: _time_to_objective(pair[1]))
+        for idx, enemy in urgent_pairs:
+            if not remaining_isr:
+                break
+            uav = min(remaining_isr,
+                      key=lambda u: np.linalg.norm(u.pos - enemy.pos))
+            isr_target[uav.id] = idx
+            remaining_isr.remove(uav)
+            remaining_enemy_idx.remove(idx)
 
     # Persistent objective watchers: reserve one ISR per objective-threat band.
     # These scouts hold a reachable point on the enemy-to-site lane so coverage
