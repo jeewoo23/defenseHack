@@ -28,6 +28,11 @@ from config import (
 from sim import Simulation
 
 
+OUTPUT_ROOT = Path("outputs")
+BENCHMARK_PLOT_DIR = OUTPUT_ROOT / "benchmark_plots"
+CSV_OUTPUT_DIR = OUTPUT_ROOT / "csv"
+JSON_OUTPUT_DIR = OUTPUT_ROOT / "json"
+
 SERIES_KEYS = [
     "objective",
     "isr_coverage",
@@ -289,6 +294,24 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=N_STEPS)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--output-prefix", default=None)
+    parser.add_argument(
+        "--plot-dir",
+        type=Path,
+        default=BENCHMARK_PLOT_DIR,
+        help="Directory for benchmark PNG plots.",
+    )
+    parser.add_argument(
+        "--csv-dir",
+        type=Path,
+        default=CSV_OUTPUT_DIR,
+        help="Directory for benchmark CSV summaries.",
+    )
+    parser.add_argument(
+        "--json-dir",
+        type=Path,
+        default=JSON_OUTPUT_DIR,
+        help="Directory for benchmark JSON summaries.",
+    )
     args = parser.parse_args()
 
     if args.seeds <= 0:
@@ -320,9 +343,13 @@ def main() -> None:
     aggregated = aggregate_results(results)
     summary = summarize_results(results)
 
-    png_path = Path(f"{prefix}.png")
-    csv_path = Path(f"{prefix}_summary.csv")
-    json_path = Path(f"{prefix}_summary.json")
+    args.plot_dir.mkdir(parents=True, exist_ok=True)
+    args.csv_dir.mkdir(parents=True, exist_ok=True)
+    args.json_dir.mkdir(parents=True, exist_ok=True)
+
+    png_path = args.plot_dir / f"{prefix}.png"
+    csv_path = args.csv_dir / f"{prefix}_summary.csv"
+    json_path = args.json_dir / f"{prefix}_summary.json"
 
     title = (
         f"AERIS Benchmark - {args.scenario} - branching={args.branching} "

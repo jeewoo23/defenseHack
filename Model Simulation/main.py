@@ -11,6 +11,7 @@ Outputs:
     <prefix>_animation.gif
 """
 import argparse
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 
@@ -22,13 +23,19 @@ from config import (
 )
 
 SNAPSHOT_STEPS = [1, 100, 200, 300, 400, 500]
+IMAGE_OUTPUT_DIR = Path("outputs") / "images"
 
 
 def _default_prefix(scenario: str) -> str:
     return "aeris_dual_objective" if scenario == SCENARIO_DUAL_OBJECTIVE else "aeris"
 
 
-def run_scenario(scenario: str, prefix: str, animate_every: int) -> Simulation:
+def run_scenario(
+    scenario: str,
+    prefix: str,
+    animate_every: int,
+    output_dir: Path = IMAGE_OUTPUT_DIR,
+) -> Simulation:
     print("=" * 60)
     print("  AERIS: Autonomous Relay-Enabled ISR System")
     print(f"  Scenario: {scenario}")
@@ -46,10 +53,16 @@ def run_scenario(scenario: str, prefix: str, animate_every: int) -> Simulation:
     )
 
     print("\nGenerating output plots...")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    plot_snapshots_grid(sim, save_path=f"{prefix}_snapshots.png", nrows=2, ncols=3)
-    plot_metrics(sim.history, save_path=f"{prefix}_metrics.png")
-    create_animation(sim, save_path=f"{prefix}_animation.gif", fps=8)
+    plot_snapshots_grid(
+        sim,
+        save_path=output_dir / f"{prefix}_snapshots.png",
+        nrows=2,
+        ncols=3,
+    )
+    plot_metrics(sim.history, save_path=output_dir / f"{prefix}_metrics.png")
+    create_animation(sim, save_path=output_dir / f"{prefix}_animation.gif", fps=8)
 
     final = sim.history[-1]
     best_cov = max(m.isr_coverage for m in sim.history)
@@ -88,6 +101,12 @@ def main():
     )
     parser.add_argument("--prefix", default=None, help="Output filename prefix.")
     parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=IMAGE_OUTPUT_DIR,
+        help="Directory for generated simulation plots and animations.",
+    )
+    parser.add_argument(
         "--animate-every",
         type=int,
         default=2,
@@ -97,7 +116,7 @@ def main():
     args = parser.parse_args()
 
     prefix = args.prefix or _default_prefix(args.scenario)
-    run_scenario(args.scenario, prefix, max(1, args.animate_every))
+    run_scenario(args.scenario, prefix, max(1, args.animate_every), args.output_dir)
 
     if not args.no_show:
         plt.show()

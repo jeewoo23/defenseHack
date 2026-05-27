@@ -8,11 +8,11 @@
 \usepackage{url}
 
 % Upload these generated files from Model Simulation/ to Overleaf with this .tex:
-% aeris_dual_objective_snapshots.png
-% aeris_dual_objective_metrics.png
-% benchmark_dual_on_5seed.png
-% benchmark_watch_off_5seed.png
-% benchmark_watch_guarded_on_5seed.png
+% outputs/images/aeris_dual_objective_snapshots.png
+% outputs/images/aeris_dual_objective_metrics.png
+% outputs/benchmark_plots/benchmark_dual_on_5seed.png
+% outputs/benchmark_plots/benchmark_watch_off_5seed.png
+% outputs/benchmark_plots/benchmark_watch_guarded_on_5seed.png
 
 \title{AERIS Project Update: Greedy Optimization Proof-of-Concept and Path Toward Receding-Horizon Control}
 
@@ -113,7 +113,7 @@ exposes the limitations of a single centerline relay chain.
 
 \begin{figure*}[t]
     \centering
-    \includegraphics[width=0.92\textwidth]{aeris_dual_objective_snapshots.png}
+    \includegraphics[width=0.92\textwidth]{outputs/images/aeris_dual_objective_snapshots.png}
     \caption{Dual-objective scenario snapshots. The north and south objectives
     force the UAV team to address multi-axis threats rather than only building a
     single relay chain toward the center.}
@@ -135,7 +135,7 @@ more honestly.
 
 \begin{figure*}[t]
     \centering
-    \includegraphics[width=0.92\textwidth]{benchmark_dual_on_5seed.png}
+    \includegraphics[width=0.92\textwidth]{outputs/benchmark_plots/benchmark_dual_on_5seed.png}
     \caption{Five-seed benchmark for the current adaptive branching controller.
     The banded plots show variability across random seeds and make policy
     comparison more statistically meaningful.}
@@ -194,13 +194,13 @@ enemies.
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{benchmark_watch_off_5seed.png}
+        \includegraphics[width=\linewidth]{outputs/benchmark_plots/benchmark_watch_off_5seed.png}
         \caption{Persistent watch disabled.}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{benchmark_watch_guarded_on_5seed.png}
+        \includegraphics[width=\linewidth]{outputs/benchmark_plots/benchmark_watch_guarded_on_5seed.png}
         \caption{Persistent watch enabled.}
     \end{subfigure}
     \caption{Persistent ISR watch was evaluated and rejected as the default
