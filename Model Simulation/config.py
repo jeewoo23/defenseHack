@@ -14,7 +14,7 @@ MOBILE_RELAY_RANGE    = 1_500.0
 STATIC_RELAY_RANGE    = 1_500.0
 
 # ISR sensor range (camera/sensor footprint — wider than comm range)
-ISR_SENSOR_RANGE = 900.0
+ISR_SENSOR_RANGE = 1_200.0
 
 # --- Terrain modifier bounds ---
 TERRAIN_MOD_MIN = 0.6
@@ -28,7 +28,7 @@ DRAIN_PER_STEP_BASE  = 100.0 / ISR_LIFETIME_STEPS
 DRAIN_RATES = {
     "ISR":          1.0,
     "Mobile Relay": 1.4,
-    "Static Relay": 0.6,
+    "Static Relay": 0.3,
 }
 
 # --- UAV movement ---
@@ -120,8 +120,25 @@ ENEMY_SPAWN_Y_MAX = 6_000.0
 
 # --- Strike mechanic ---
 # Enemy is eliminated after this many *consecutive* steps of being observed by
-# a connected ISR UAV (simulates FOB calling a fire mission).
-STRIKE_OBSERVATION_STEPS = 20
+# a connected ISR UAV (simulates FOB calling a fire mission). Reduced from 20
+# so that outnumbered scenarios can complete strikes before bouncing enemies
+# slip around the sensor footprint.
+STRIKE_OBSERVATION_STEPS = 12
+# Cooperative observation: when multiple connected ISRs simultaneously
+# observe the same enemy, the strike-progress counter advances by the number
+# of observers (capped). Doctrinal intuition: redundant sensors speed up a
+# fire mission, but past a small number the artillery's response time is the
+# bottleneck.
+COOPERATIVE_OBS_CAP = 2
+
+# --- Area coverage (persistent surveillance metric) ---
+# The map is divided into AREA_GRID_RESOLUTION^2 cells. Each cell records the
+# last step at which a connected ISR sensor footprint covered it. A cell counts
+# as "fresh" if it was observed within AREA_FRESHNESS_WINDOW steps. The fresh
+# fraction enters the optimizer score so policies that maintain wide coverage
+# (not just clustered around enemies) are rewarded.
+AREA_GRID_RESOLUTION = 25            # 25x25 = 625 cells, ~400m per cell on a 10km map
+AREA_FRESHNESS_WINDOW = 50           # steps; ~8 min at 10s/step
 
 # --- Objective weights ---
 W_ISR    = 3.0
@@ -139,6 +156,7 @@ SCORE_WEIGHTS = {
     "relay_loss_penalty": 2.0,
     "objective_health": 3.0,
     "objective_loss_penalty": 5.0,
+    "area_coverage": 2.0,
 }
 
 # --- Simulation ---

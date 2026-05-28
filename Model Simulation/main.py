@@ -15,6 +15,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+import optimizer
 from sim import Simulation, POLICY_GREEDY, POLICY_HORIZON, VALID_POLICIES
 from plotting import plot_snapshots_grid, plot_metrics, create_animation
 from config import (
@@ -120,12 +121,37 @@ def main():
         default=POLICY_GREEDY,
         help="Control policy: greedy heuristic or finite-horizon optimizer.",
     )
+    parser.add_argument(
+        "--emergency-intercept",
+        choices=["config", "on", "off"],
+        default="config",
+        help="Override emergency objective-bound enemy intercept behavior.",
+    )
+    parser.add_argument(
+        "--objective-defense",
+        choices=["config", "on", "off"],
+        default="config",
+        help="Reserve a relay chain + forward ISR per objective.",
+    )
     parser.add_argument("--no-show", action="store_true", help="Skip plt.show().")
     args = parser.parse_args()
 
+    if args.emergency_intercept != "config":
+        optimizer.ENABLE_EMERGENCY_INTERCEPT = args.emergency_intercept == "on"
+    if args.objective_defense != "config":
+        optimizer.ENABLE_OBJECTIVE_DEFENSE = args.objective_defense == "on"
+
     prefix = args.prefix or _default_prefix(args.scenario)
-    if args.policy == POLICY_HORIZON and args.prefix is None:
-        prefix = f"{prefix}_horizon"
+    if args.prefix is None:
+        suffix = []
+        if args.policy == POLICY_HORIZON:
+            suffix.append("horizon")
+        if args.emergency_intercept == "on":
+            suffix.append("intercept")
+        if args.objective_defense == "on":
+            suffix.append("defense")
+        if suffix:
+            prefix = f"{prefix}_{'_'.join(suffix)}"
     run_scenario(
         args.scenario, prefix, max(1, args.animate_every),
         args.output_dir, policy=args.policy,

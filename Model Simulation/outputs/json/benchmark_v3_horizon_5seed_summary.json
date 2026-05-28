@@ -1,0 +1,90 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "config",
+  "objective_defense": "config",
+  "policy": "horizon",
+  "seeds": 5,
+  "steps": 500,
+  "summary": {
+    "final_objective": {
+      "mean": -8.493794284595436,
+      "std": 6.926966987026465,
+      "p25": -10.507285799392974,
+      "p75": -4.415055879670647
+    },
+    "final_isr_coverage": {
+      "mean": 0.8,
+      "std": 0.4000000000000001,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9857142857142858,
+      "std": 0.02857142857142856,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.18194782715357682,
+      "std": 0.01682283036672644,
+      "p25": 0.17838554753644842,
+      "p75": 0.1930465207258567
+    },
+    "final_area_coverage": {
+      "mean": 0.1408,
+      "std": 0.04924258319787864,
+      "p25": 0.1024,
+      "p75": 0.1664
+    },
+    "final_avg_detection_latency": {
+      "mean": 143.3777777777778,
+      "std": 52.01109093498149,
+      "p25": 128.11111111111111,
+      "p75": 191.88888888888889
+    },
+    "final_uavs_alive": {
+      "mean": 12.8,
+      "std": 1.469693845669907,
+      "p25": 13.0,
+      "p75": 14.0
+    },
+    "final_enemies_remaining": {
+      "mean": 0.6,
+      "std": 1.2000000000000002,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "total_strikes": {
+      "mean": 8.4,
+      "std": 1.2,
+      "p25": 9.0,
+      "p75": 9.0
+    },
+    "total_uav_kills": {
+      "mean": 1.2,
+      "std": 1.4696938456699067,
+      "p25": 0.0,
+      "p75": 1.0
+    },
+    "north_site_health": {
+      "mean": 24.7,
+      "std": 38.73448076326827,
+      "p25": 0.0,
+      "p75": 23.5
+    },
+    "south_site_health": {
+      "mean": 0.0,
+      "std": 0.0,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "mean_objective_health": {
+      "mean": 12.35,
+      "std": 19.367240381634137,
+      "p25": 0.0,
+      "p75": 11.75
+    }
+  }
+}

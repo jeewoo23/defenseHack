@@ -39,6 +39,7 @@ W_LAMBDA = 1.0      # objective damage suffered during rollout (health pts)
 W_MU     = 0.05     # avg detection latency (steps)
 W_RHO    = 3.0      # UAVs lost during rollout
 W_PSI    = 1.0      # battery drain (0..1)
+W_NU     = 2.0      # area coverage (0..1) -- persistent surveillance value
 
 
 @dataclass
@@ -189,6 +190,7 @@ def _score_state(clone, baseline) -> float:
         + W_BETA   * float(terminal.conn_fraction)
         + W_GAMMA  * h_obj
         + W_ETA    * float(s_strike)
+        + W_NU     * float(terminal.area_coverage)
         - W_LAMBDA * float(d_obj)
         - W_MU     * float(l_detect)
         - W_RHO    * float(l_uav)

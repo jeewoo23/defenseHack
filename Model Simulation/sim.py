@@ -31,6 +31,8 @@ from config import (
     DEFAULT_SCENARIO, SCENARIO_DUAL_OBJECTIVE, SECONDARY_OBJECTIVES,
     OBJECTIVE_ATTACK_RANGE, OBJECTIVE_DAMAGE_PER_STEP, OBJECTIVE_HEALTH,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
+    ISR_SENSOR_RANGE, AREA_GRID_RESOLUTION, AREA_FRESHNESS_WINDOW,
+    COOPERATIVE_OBS_CAP,
 )
 
 from uav import UAV, UAVMode
@@ -71,6 +73,7 @@ class StepMetrics:
     objective_health: dict = field(default_factory=dict)
     objectives_alive: int = 0
     role_counts:   dict = field(default_factory=dict)
+    area_coverage: float = 0.0     # fraction of grid cells freshly observed
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +100,8 @@ def compute_avg_detection_latency(enemies) -> float | None:
 
 
 def compute_objective_score(
-    enemies, uavs, history, conn_fraction, relays_killed_total, objectives=None
+    enemies, uavs, history, conn_fraction, relays_killed_total, objectives=None,
+    area_coverage: float = 0.0,
 ) -> float:
     """Run-to-date score that is less sensitive to enemy attrition timing."""
     w = SCORE_WEIGHTS
@@ -105,6 +109,9 @@ def compute_objective_score(
 
     conn_terms = [m.conn_fraction for m in history] + [conn_fraction]
     avg_conn = sum(conn_terms) / max(1, len(conn_terms))
+
+    area_terms = [m.area_coverage for m in history] + [area_coverage]
+    avg_area = sum(area_terms) / max(1, len(area_terms))
 
     avg_latency = compute_avg_detection_latency(enemies)
     latency_for_score = avg_latency if avg_latency is not None else N_STEPS
@@ -124,6 +131,7 @@ def compute_objective_score(
         + w["connectivity"] * avg_conn
         + w["detection_latency"] * latency_term
         + w["objective_health"] * objective_health
+        + w["area_coverage"] * avg_area
         - w["uav_loss_penalty"] * uavs_lost
         - w["relay_loss_penalty"] * relays_killed_total
         - w["objective_loss_penalty"] * objectives_lost
@@ -212,6 +220,50 @@ class Simulation:
         # Animation frames: lightweight per-step records
         self.frames: list[dict] = []
 
+        # Area-coverage grid: per-cell last-observed step.
+        # Initialized so every cell starts maximally stale.
+        n = AREA_GRID_RESOLUTION
+        self._area_cell_size = WORLD_SIZE / n
+        self._area_centers_x = (np.arange(n) + 0.5) * self._area_cell_size
+        self._area_centers_y = (np.arange(n) + 0.5) * self._area_cell_size
+        self.area_last_observed = np.full((n, n), -10_000, dtype=np.int64)
+
+    # ------------------------------------------------------------------
+    def _update_area_coverage(self, connected_ids: set) -> None:
+        """Stamp every grid cell inside a connected ISR sensor circle."""
+        if not connected_ids:
+            return
+        cell = self._area_cell_size
+        n = AREA_GRID_RESOLUTION
+        for uav in self.uavs:
+            if not uav.alive or uav.mode != UAVMode.ISR:
+                continue
+            if uav.id not in connected_ids:
+                continue
+            mod = self.terrain.get_modifier(uav.pos)
+            radius = ISR_SENSOR_RANGE * mod
+            x_min = max(0, int((uav.pos[0] - radius) // cell))
+            x_max = min(n - 1, int((uav.pos[0] + radius) // cell))
+            y_min = max(0, int((uav.pos[1] - radius) // cell))
+            y_max = min(n - 1, int((uav.pos[1] + radius) // cell))
+            if x_min > x_max or y_min > y_max:
+                continue
+            xs = self._area_centers_x[x_min:x_max + 1]
+            ys = self._area_centers_y[y_min:y_max + 1]
+            dx = xs - uav.pos[0]
+            dy = ys - uav.pos[1]
+            dist_sq = dx[None, :] ** 2 + dy[:, None] ** 2
+            mask = dist_sq <= radius * radius
+            self.area_last_observed[y_min:y_max + 1, x_min:x_max + 1] = np.where(
+                mask, self.step_num,
+                self.area_last_observed[y_min:y_max + 1, x_min:x_max + 1],
+            )
+
+    def _area_coverage_fraction(self) -> float:
+        """Fraction of grid cells observed within AREA_FRESHNESS_WINDOW steps."""
+        fresh = (self.step_num - self.area_last_observed) <= AREA_FRESHNESS_WINDOW
+        return float(np.mean(fresh))
+
     # ------------------------------------------------------------------
     def step(self, record_snapshot: bool = False,
              record_frame: bool = False) -> StepMetrics:
@@ -295,7 +347,7 @@ class Simulation:
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
         # 8. Update enemy detection state
-        #    get_observed_enemy_ids returns {enemy.id: centroid_of_observers}
+        #    get_observed_enemy_ids returns {enemy.id: (centroid, n_observers)}
         observed = get_observed_enemy_ids(
             self.uavs, self.enemies, connected_ids, self.terrain
         )
@@ -318,8 +370,9 @@ class Simulation:
                 enemy._detecting_centroid = None
                 continue
             if enemy.id in observed:
-                enemy.consecutive_obs += 1
-                enemy._detecting_centroid = observed[enemy.id]
+                centroid, n_observers = observed[enemy.id]
+                enemy.consecutive_obs += min(n_observers, COOPERATIVE_OBS_CAP)
+                enemy._detecting_centroid = centroid
                 if enemy.consecutive_obs >= STRIKE_OBSERVATION_STEPS:
                     enemy.alive = False
                     enemy._detecting_centroid = None
@@ -327,6 +380,10 @@ class Simulation:
             else:
                 enemy.consecutive_obs     = 0
                 enemy._detecting_centroid = None
+
+        # 8b. Area coverage: stamp cells inside any connected ISR sensor circle.
+        self._update_area_coverage(connected_ids)
+        area_coverage_now = self._area_coverage_fraction()
 
         # 9. Metrics
         alive_uavs   = [u for u in self.uavs if u.alive]
@@ -345,7 +402,8 @@ class Simulation:
         avg_detection_latency = float(np.mean(detection_latencies)) if detection_latencies else None
         obj = compute_objective_score(
             self.enemies, self.uavs, self.history, conn_frac,
-            self.relays_killed_total, self.objectives
+            self.relays_killed_total, self.objectives,
+            area_coverage=area_coverage_now,
         )
 
         role_counts = {
@@ -375,6 +433,7 @@ class Simulation:
             objective_health={o.name: o.health for o in self.objectives},
             objectives_alive=sum(1 for o in self.objectives if o.alive),
             role_counts=role_counts,
+            area_coverage=area_coverage_now,
         )
         self.history.append(metrics)
 

@@ -111,8 +111,9 @@ def compute_flank_coverage(enemies, observed_enemy_ids) -> dict:
 def get_observed_enemy_ids(uavs, enemies, connected_ids: set, terrain) -> dict:
     """
     For each alive enemy observed by a connected ISR UAV, return a mapping
-    enemy.id -> centroid of observing ISR positions.
-    Used to drive enemy retreat and update detection counters.
+    enemy.id -> (centroid of observing ISR positions, number of observers).
+    Used to drive enemy retreat and update detection counters; the observer
+    count enables cooperative-observation strike acceleration.
     """
     from uav import UAVMode
     isr_uavs = [u for u in uavs
@@ -129,8 +130,8 @@ def get_observed_enemy_ids(uavs, enemies, connected_ids: set, terrain) -> dict:
             if np.linalg.norm(uav.pos - enemy.pos) <= sensor_range:
                 observers.setdefault(enemy.id, []).append(uav.pos.copy())
 
-    # Collapse lists to centroid
+    # Collapse lists to (centroid, count).
     return {
-        eid: np.mean(positions, axis=0)
+        eid: (np.mean(positions, axis=0), len(positions))
         for eid, positions in observers.items()
     }

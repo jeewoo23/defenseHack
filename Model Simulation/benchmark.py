@@ -24,6 +24,7 @@ import optimizer
 from config import (
     DEFAULT_SCENARIO, N_STEPS, OBJECTIVE_HEALTH,
     SCENARIO_BASELINE, SCENARIO_DUAL_OBJECTIVE,
+    N_UAVS, N_ENEMIES, N_ENEMIES_FLANK,
 )
 from sim import Simulation, POLICY_GREEDY, POLICY_HORIZON, VALID_POLICIES
 
@@ -40,6 +41,7 @@ SERIES_KEYS = [
     "center_coverage",
     "south_coverage",
     "time_weighted_coverage",
+    "area_coverage",
     "conn_fraction",
     "avg_detection_latency",
     "n_alive",
@@ -56,7 +58,7 @@ PLOT_KEYS = [
     ("objective", "Objective Score", "Score"),
     ("isr_coverage", "ISR Coverage", "Fraction"),
     ("conn_fraction", "Connected UAV Fraction", "Fraction"),
-    ("north_coverage", "North Coverage", "Fraction"),
+    ("area_coverage", "Area Coverage (fresh cells)", "Fraction"),
     ("center_coverage", "Center Coverage", "Fraction"),
     ("south_coverage", "South Coverage", "Fraction"),
     ("time_weighted_coverage", "Time-Weighted Coverage", "Observed / Alive"),
@@ -111,6 +113,7 @@ def _extract_metrics(history) -> dict[str, list[float]]:
         metrics["center_coverage"].append(_as_float(m.center_coverage))
         metrics["south_coverage"].append(_as_float(m.south_coverage))
         metrics["time_weighted_coverage"].append(_as_float(m.time_weighted_coverage))
+        metrics["area_coverage"].append(_as_float(m.area_coverage))
         metrics["conn_fraction"].append(_as_float(m.conn_fraction))
         metrics["avg_detection_latency"].append(_as_float(m.avg_detection_latency))
         metrics["n_alive"].append(_as_float(m.n_alive))
@@ -124,16 +127,19 @@ def _extract_metrics(history) -> dict[str, list[float]]:
     return metrics
 
 
-def _run_one(args: tuple[int, str, str, str, str, str, str, int]) -> dict:
+def _run_one(args: tuple) -> dict:
     (seed, scenario, branching, persistent_watch, emergency_intercept,
-     objective_defense, policy, steps) = args
+     objective_defense, policy, steps, n_uavs, n_enemies, n_enemies_flank) = args
     _set_branching(branching)
     _set_persistent_watch(persistent_watch)
     _set_emergency_intercept(emergency_intercept)
     _set_objective_defense(objective_defense)
     np.random.seed(seed)
 
-    sim = Simulation(seed=seed, scenario=scenario, policy=policy)
+    sim = Simulation(
+        seed=seed, scenario=scenario, policy=policy,
+        n_uavs=n_uavs, n_enemies=n_enemies, n_enemies_flank=n_enemies_flank,
+    )
     sim.run(n_steps=steps, verbose=False)
     metrics = _extract_metrics(sim.history)
     final = sim.history[-1]
@@ -147,6 +153,7 @@ def _run_one(args: tuple[int, str, str, str, str, str, str, int]) -> dict:
             "final_isr_coverage": _as_float(final.isr_coverage),
             "final_conn_fraction": _as_float(final.conn_fraction),
             "final_time_weighted_coverage": _as_float(final.time_weighted_coverage),
+            "final_area_coverage": _as_float(final.area_coverage),
             "final_avg_detection_latency": _as_float(final.avg_detection_latency),
             "final_uavs_alive": _as_float(final.n_alive),
             "final_enemies_remaining": _as_float(final.n_enemies),
@@ -171,10 +178,13 @@ def run_benchmark(
     seeds: int = 20,
     steps: int = N_STEPS,
     workers: int = 1,
+    n_uavs: int = N_UAVS,
+    n_enemies: int = N_ENEMIES,
+    n_enemies_flank: int = N_ENEMIES_FLANK,
 ) -> list[dict]:
     jobs = [
         (seed, scenario, branching, persistent_watch, emergency_intercept,
-         objective_defense, policy, steps)
+         objective_defense, policy, steps, n_uavs, n_enemies, n_enemies_flank)
         for seed in range(seeds)
     ]
     if workers > 1:
@@ -340,6 +350,11 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, default=20)
     parser.add_argument("--steps", type=int, default=N_STEPS)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--n-uavs", type=int, default=N_UAVS)
+    parser.add_argument("--n-enemies", type=int, default=N_ENEMIES,
+                        help="Center-band enemies.")
+    parser.add_argument("--n-flank", type=int, default=N_ENEMIES_FLANK,
+                        help="Enemies per flank band (top and bottom).")
     parser.add_argument("--output-prefix", default=None)
     parser.add_argument(
         "--plot-dir",
@@ -394,6 +409,9 @@ def main() -> None:
         seeds=args.seeds,
         steps=args.steps,
         workers=args.workers,
+        n_uavs=args.n_uavs,
+        n_enemies=args.n_enemies,
+        n_enemies_flank=args.n_flank,
     )
     aggregated = aggregate_results(results)
     summary = summarize_results(results)
@@ -421,6 +439,9 @@ def main() -> None:
         "policy": args.policy,
         "seeds": args.seeds,
         "steps": args.steps,
+        "n_uavs": args.n_uavs,
+        "n_enemies": args.n_enemies,
+        "n_flank": args.n_flank,
         "summary": summary,
     }, indent=2))
 
