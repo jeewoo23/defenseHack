@@ -1,0 +1,93 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "on",
+  "objective_defense": "off",
+  "policy": "greedy",
+  "seeds": 20,
+  "steps": 500,
+  "n_uavs": 14,
+  "n_enemies": 3,
+  "n_flank": 3,
+  "summary": {
+    "final_objective": {
+      "mean": -8.367974733796428,
+      "std": 16.407916926148097,
+      "p25": -21.88434191957267,
+      "p75": 6.443692543617267
+    },
+    "final_isr_coverage": {
+      "mean": 0.7,
+      "std": 0.45825756949558394,
+      "p25": 0.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9728174603174603,
+      "std": 0.07148669372472487,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.13130283465082979,
+      "std": 0.050128960099987435,
+      "p25": 0.10927943902959988,
+      "p75": 0.17263947740453733
+    },
+    "final_area_coverage": {
+      "mean": 0.16040000000000001,
+      "std": 0.06331811747043654,
+      "p25": 0.10880000000000001,
+      "p75": 0.2112
+    },
+    "final_avg_detection_latency": {
+      "mean": 102.20222222222222,
+      "std": 53.9756015525808,
+      "p25": 50.44444444444444,
+      "p75": 146.875
+    },
+    "final_uavs_alive": {
+      "mean": 11.75,
+      "std": 3.344772040064913,
+      "p25": 9.75,
+      "p75": 14.0
+    },
+    "final_enemies_remaining": {
+      "mean": 1.9,
+      "std": 3.254228019054596,
+      "p25": 0.0,
+      "p75": 2.25
+    },
+    "total_strikes": {
+      "mean": 7.1,
+      "std": 3.2542280190545965,
+      "p25": 6.75,
+      "p75": 9.0
+    },
+    "total_uav_kills": {
+      "mean": 2.25,
+      "std": 3.344772040064913,
+      "p25": 0.0,
+      "p75": 4.25
+    },
+    "north_site_health": {
+      "mean": 43.05,
+      "std": 48.298524822193066,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "south_site_health": {
+      "mean": 50.0,
+      "std": 50.0,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "mean_objective_health": {
+      "mean": 46.525,
+      "std": 42.24259550501129,
+      "p25": 0.0,
+      "p75": 100.0
+    }
+  }
+}
