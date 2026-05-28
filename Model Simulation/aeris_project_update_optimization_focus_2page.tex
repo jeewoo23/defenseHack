@@ -27,13 +27,15 @@ multi-modal UAV control: each UAV switches between ISR, mobile relay, and
 static relay modes. Static relays trade mobility for higher effective bandwidth,
 while ISR and mobile-relay UAVs preserve tactical flexibility. Since the
 proposal, the simulator has matured into a benchmarkable graph testbed with
-connected ISR scoring, adaptive relay branching, dual-objective threats, and
-multi-seed evaluation. This report describes the final controller: a
-\textbf{finite-horizon (receding-horizon) optimizer} that evaluates a discrete
-set of candidate policies via short-horizon rollouts and selects the maximizer
-of a multi-objective mission score. The optimizer is compared head-to-head
-against the greedy baseline over five random seeds on the dual-objective
-scenario.
+connected ISR scoring, adaptive relay branching, dual-objective threats,
+cooperative observation, and persistent-surveillance area coverage. This
+report describes the final controller: a \textbf{finite-horizon
+(receding-horizon) optimizer} that evaluates a discrete set of seven
+candidate policies via short-horizon rollouts and selects the maximizer of a
+multi-objective mission score. The optimizer is compared against three
+greedy variants (branching, emergency intercept, forward objective defense)
+on a four-scenario UAV-vs-enemy sweep at 20 seeds per cell, and wins final
+objective on all three hard scenarios.
 \end{abstract}
 
 \section{Introduction}
@@ -83,7 +85,7 @@ Adaptive branching & North/center/south enemy clustering. \\
 Mission metrics & Detection latency, time-weighted coverage, connectivity, strikes, losses, objective health. \\
 Benchmarking & Multi-seed plots and summary tables. \\
 Greedy baseline & Single-step heuristic with branching and band-aware ISR matching. \\
-Finite-horizon optimizer & 5-candidate rollout with multi-objective scoring (this work). \\
+Finite-horizon optimizer & 7-candidate rollout with multi-objective scoring including area coverage and cooperative observation (this work). \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -152,9 +154,9 @@ right autonomy layer for the current state.
 \begin{enumerate}
 \item Every $K=5$ steps, snapshot the simulation and deepcopy it.
 \item For each candidate policy $\pi$, run the clone for $H=20$ steps under
-      $\pi$ and evaluate $J$ on the terminal state. $H$ is chosen to match
-      the 20-step strike-completion window so that candidates that initiate
-      a strike actually see it complete inside the rollout.
+      $\pi$ and evaluate $J$ on the terminal state. $H$ is chosen to span
+      the 12-step strike-completion window with margin so that candidates
+      initiating a strike see it complete inside the rollout.
 \item Select $\pi^{\star} = \arg\max_\pi J(\pi)$.
 \item Execute $\pi^{\star}$ on the real simulator for the next $K$ steps.
 \end{enumerate}
@@ -226,8 +228,8 @@ UAV kills by enemy    & 3.45 & 5.05 & 2.70 & \textbf{2.05} \\
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{outputs/benchmark_plots/benchmark_v3_horizon_5seed.png}
-\caption{Five-seed benchmark on the rebalanced dual-objective scenario for the
+\includegraphics[width=\linewidth]{outputs/benchmark_plots/benchmark_final_outnumbered_horizon_20seed.png}
+\caption{20-seed benchmark on the 10v15 outnumbered scenario for the
 finite-horizon controller. Banded plots show seed-to-seed variability. The
 controller selects from a 7-candidate policy set every $K=5$ steps after an
 $H=20$ rollout per candidate.}
