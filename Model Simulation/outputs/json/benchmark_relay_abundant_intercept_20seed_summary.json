@@ -1,0 +1,93 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "on",
+  "objective_defense": "off",
+  "policy": "greedy",
+  "seeds": 20,
+  "steps": 500,
+  "n_uavs": 18,
+  "n_enemies": 2,
+  "n_flank": 2,
+  "summary": {
+    "final_objective": {
+      "mean": 4.021367842167089,
+      "std": 5.845465762599965,
+      "p25": 5.397959617959501,
+      "p75": 7.136735589675821
+    },
+    "final_isr_coverage": {
+      "mean": 1.0,
+      "std": 0.0,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9263801353874882,
+      "std": 0.09173521806946446,
+      "p25": 0.875,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.17216787049204874,
+      "std": 0.04870288228350317,
+      "p25": 0.14930972684092353,
+      "p75": 0.20368988850693842
+    },
+    "final_area_coverage": {
+      "mean": 0.20384000000000002,
+      "std": 0.05708973988380049,
+      "p25": 0.1828,
+      "p75": 0.2336
+    },
+    "final_avg_detection_latency": {
+      "mean": 72.8,
+      "std": 44.19953493973538,
+      "p25": 40.916666666666664,
+      "p75": 88.91666666666666
+    },
+    "final_uavs_alive": {
+      "mean": 17.6,
+      "std": 0.9695359714832659,
+      "p25": 18.0,
+      "p75": 18.0
+    },
+    "final_enemies_remaining": {
+      "mean": 0.05,
+      "std": 0.21794494717703364,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "total_strikes": {
+      "mean": 5.95,
+      "std": 0.21794494717703367,
+      "p25": 6.0,
+      "p75": 6.0
+    },
+    "total_uav_kills": {
+      "mean": 0.4,
+      "std": 0.9695359714832659,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "north_site_health": {
+      "mean": 95.0,
+      "std": 21.79449471770337,
+      "p25": 100.0,
+      "p75": 100.0
+    },
+    "south_site_health": {
+      "mean": 85.0,
+      "std": 35.70714214271425,
+      "p25": 100.0,
+      "p75": 100.0
+    },
+    "mean_objective_health": {
+      "mean": 90.0,
+      "std": 20.0,
+      "p25": 100.0,
+      "p75": 100.0
+    }
+  }
+}

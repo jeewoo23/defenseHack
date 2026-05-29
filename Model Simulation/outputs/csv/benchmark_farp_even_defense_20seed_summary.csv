@@ -1,0 +1,14 @@
+metric,mean,std,p25,p75
+final_objective,-13.5345,12.0832,-22.356,-0.286881
+final_isr_coverage,0.45,0.497494,0,1
+final_conn_fraction,0.942857,0.12224,0.96875,1
+final_time_weighted_coverage,0.0977787,0.0596479,0.0386361,0.14843
+final_area_coverage,0.13288,0.0487396,0.0988,0.148
+final_avg_detection_latency,111.954,42.5088,70.7083,137.036
+final_uavs_alive,8.6,1.74356,7,10
+final_enemies_remaining,4.95,4.94444,0,10
+total_strikes,7.05,4.94444,2,12
+total_uav_kills,3.4,1.74356,2,5
+north_site_health,40,48.9898,0,100
+south_site_health,40,48.9898,0,100
+mean_objective_health,40,46.3681,0,100

@@ -1,0 +1,93 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "off",
+  "objective_defense": "on",
+  "policy": "greedy",
+  "seeds": 20,
+  "steps": 500,
+  "n_uavs": 18,
+  "n_enemies": 2,
+  "n_flank": 2,
+  "summary": {
+    "final_objective": {
+      "mean": 1.7133021081706872,
+      "std": 6.866652488312759,
+      "p25": 1.957335087579299,
+      "p75": 6.596895432609477
+    },
+    "final_isr_coverage": {
+      "mean": 1.0,
+      "std": 0.0,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9004826097105509,
+      "std": 0.11616356634371387,
+      "p25": 0.7837301587301587,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.1662384182671472,
+      "std": 0.03963618206247443,
+      "p25": 0.1267480727846367,
+      "p75": 0.2038683095866565
+    },
+    "final_area_coverage": {
+      "mean": 0.2152,
+      "std": 0.06519386474201387,
+      "p25": 0.1664,
+      "p75": 0.2608
+    },
+    "final_avg_detection_latency": {
+      "mean": 81.76666666666667,
+      "std": 34.75810856636349,
+      "p25": 47.833333333333336,
+      "p75": 99.91666666666667
+    },
+    "final_uavs_alive": {
+      "mean": 16.6,
+      "std": 1.8547236990991407,
+      "p25": 16.75,
+      "p75": 18.0
+    },
+    "final_enemies_remaining": {
+      "mean": 0.0,
+      "std": 0.0,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "total_strikes": {
+      "mean": 6.0,
+      "std": 0.0,
+      "p25": 6.0,
+      "p75": 6.0
+    },
+    "total_uav_kills": {
+      "mean": 1.4,
+      "std": 1.8547236990991405,
+      "p25": 0.0,
+      "p75": 1.25
+    },
+    "north_site_health": {
+      "mean": 100.0,
+      "std": 0.0,
+      "p25": 100.0,
+      "p75": 100.0
+    },
+    "south_site_health": {
+      "mean": 94.45,
+      "std": 17.448423997599324,
+      "p25": 100.0,
+      "p75": 100.0
+    },
+    "mean_objective_health": {
+      "mean": 97.225,
+      "std": 8.724211998799662,
+      "p25": 100.0,
+      "p75": 100.0
+    }
+  }
+}

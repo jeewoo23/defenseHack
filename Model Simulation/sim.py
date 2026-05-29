@@ -32,7 +32,7 @@ from config import (
     OBJECTIVE_ATTACK_RANGE, OBJECTIVE_DAMAGE_PER_STEP, OBJECTIVE_HEALTH,
     RTB_ARRIVAL_DIST, RTB_RECHARGE_STEPS, UAV_MAX_SPEED,
     ISR_SENSOR_RANGE, AREA_GRID_RESOLUTION, AREA_FRESHNESS_WINDOW,
-    COOPERATIVE_OBS_CAP,
+    COOPERATIVE_OBS_CAP, ENABLE_SITE_CHARGING,
 )
 
 from uav import UAV, UAVMode
@@ -293,7 +293,7 @@ class Simulation:
             )
 
         # 3. Build initial graph
-        G             = build_comm_graph(self.uavs, self.base, self.terrain)
+        G             = build_comm_graph(self.uavs, self.base, self.terrain, self.objectives)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
         # 4. Policy step (modifies modes and positions); pass only alive enemies
@@ -317,8 +317,15 @@ class Simulation:
             greedy_policy(self.uavs, connected_ids,
                           alive_enemies, self.base, self.terrain, G)
 
-        # 5. RTB movement and recharge
+        # 5. RTB movement and recharge. Charging points = base plus every alive
+        # critical objective (when FARP charging is enabled). A destroyed site
+        # stops charging.
         _base_arr = np.array(BASE_POS, dtype=float)
+        charging_points = [_base_arr]
+        if ENABLE_SITE_CHARGING:
+            for obj in self.objectives:
+                if obj.alive:
+                    charging_points.append(obj.pos)
         for uav in self.uavs:
             if not uav.alive:
                 continue
@@ -330,11 +337,15 @@ class Simulation:
                     uav.set_mode(UAVMode.ISR)
                 continue
             if uav.rtb:
-                dist = np.linalg.norm(uav.pos - _base_arr)
+                target_pos = min(
+                    charging_points,
+                    key=lambda p: np.linalg.norm(uav.pos - p),
+                )
+                dist = np.linalg.norm(uav.pos - target_pos)
                 if dist <= RTB_ARRIVAL_DIST:
                     uav.recharge_steps_remaining = RTB_RECHARGE_STEPS
                 else:
-                    delta = _base_arr - uav.pos
+                    delta = target_pos - uav.pos
                     uav.pos += (delta / np.linalg.norm(delta)) * min(np.linalg.norm(delta), UAV_MAX_SPEED)
                     uav.pos = np.clip(uav.pos, 0.0, WORLD_SIZE)
 
@@ -343,7 +354,7 @@ class Simulation:
             uav.drain_battery()
 
         # 7. Rebuild graph after movement & battery deaths
-        G             = build_comm_graph(self.uavs, self.base, self.terrain)
+        G             = build_comm_graph(self.uavs, self.base, self.terrain, self.objectives)
         connected_ids = get_connected_uav_ids(G, self.uavs)
 
         # 8. Update enemy detection state

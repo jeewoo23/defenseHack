@@ -4,18 +4,28 @@ Communication graph construction and analysis.
 from __future__ import annotations
 import numpy as np
 import networkx as nx
-from config import ISR_SENSOR_RANGE
+from config import ISR_SENSOR_RANGE, ENABLE_SITE_AS_RELAY, SITE_COMM_RANGE
 
 
-def build_comm_graph(uavs, base, terrain) -> nx.Graph:
+def build_comm_graph(uavs, base, terrain, objectives=None) -> nx.Graph:
     """
-    Nodes: 'base' + alive UAV ids.
-    Edge exists when distance <= max(range_A, range_B).
-    Using max lets high-power nodes (Static Relay, Base) reach lower-power ones.
-    Terrain modifier is evaluated at each node's position.
+    Nodes: 'base', alive UAV ids, and (when ENABLE_SITE_AS_RELAY) each alive
+    critical objective. Edge exists when distance <= max(range_A, range_B).
+    Sites carry a zero-distance hardened backhaul edge to base (fiber/satellite
+    uplink), so any UAV within SITE_COMM_RANGE of an alive site is connected.
     """
     G = nx.Graph()
     G.add_node("base", pos=base.pos.copy())
+
+    # Sites as forward relay nodes with hardened backhaul to base.
+    alive_sites: list[tuple[str, np.ndarray]] = []
+    if ENABLE_SITE_AS_RELAY and objectives:
+        for obj in objectives:
+            if obj.alive:
+                node_id = f"site:{obj.name}"
+                G.add_node(node_id, pos=obj.pos.copy())
+                G.add_edge("base", node_id, dist=0.0)
+                alive_sites.append((node_id, obj.pos))
 
     alive = [u for u in uavs if u.alive]
     for u in alive:
@@ -29,6 +39,16 @@ def build_comm_graph(uavs, base, terrain) -> nx.Graph:
         link_range = max(uav_range, base.comm_range)
         if dist <= link_range:
             G.add_edge("base", u.id, dist=dist)
+
+    # Site ↔ UAV links (forward relay coverage)
+    for node_id, site_pos in alive_sites:
+        for u in alive:
+            dist = np.linalg.norm(u.pos - site_pos)
+            mod  = terrain.get_modifier(u.pos)
+            uav_range = u.comm_range(mod)
+            link_range = max(uav_range, SITE_COMM_RANGE)
+            if dist <= link_range:
+                G.add_edge(node_id, u.id, dist=dist)
 
     # UAV ↔ UAV links
     for i in range(len(alive)):

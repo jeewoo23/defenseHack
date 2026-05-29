@@ -1,0 +1,93 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "off",
+  "objective_defense": "on",
+  "policy": "greedy",
+  "seeds": 20,
+  "steps": 500,
+  "n_uavs": 12,
+  "n_enemies": 4,
+  "n_flank": 4,
+  "summary": {
+    "final_objective": {
+      "mean": -13.53454122213292,
+      "std": 12.083186161579393,
+      "p25": -22.355970976001668,
+      "p75": -0.28688124440956786
+    },
+    "final_isr_coverage": {
+      "mean": 0.45,
+      "std": 0.4974937185533099,
+      "p25": 0.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9428571428571428,
+      "std": 0.1222399363580345,
+      "p25": 0.96875,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.09777872905333596,
+      "std": 0.05964791287248119,
+      "p25": 0.038636054421768706,
+      "p75": 0.14842981430045576
+    },
+    "final_area_coverage": {
+      "mean": 0.13288,
+      "std": 0.048739569140483795,
+      "p25": 0.0988,
+      "p75": 0.148
+    },
+    "final_avg_detection_latency": {
+      "mean": 111.95443181818185,
+      "std": 42.50876048994563,
+      "p25": 70.70833333333334,
+      "p75": 137.03571428571428
+    },
+    "final_uavs_alive": {
+      "mean": 8.6,
+      "std": 1.7435595774162695,
+      "p25": 7.0,
+      "p75": 10.0
+    },
+    "final_enemies_remaining": {
+      "mean": 4.95,
+      "std": 4.944441323344832,
+      "p25": 0.0,
+      "p75": 10.0
+    },
+    "total_strikes": {
+      "mean": 7.05,
+      "std": 4.944441323344832,
+      "p25": 2.0,
+      "p75": 12.0
+    },
+    "total_uav_kills": {
+      "mean": 3.4,
+      "std": 1.7435595774162693,
+      "p25": 2.0,
+      "p75": 5.0
+    },
+    "north_site_health": {
+      "mean": 40.0,
+      "std": 48.98979485566356,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "south_site_health": {
+      "mean": 40.0,
+      "std": 48.98979485566356,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "mean_objective_health": {
+      "mean": 40.0,
+      "std": 46.36809247747852,
+      "p25": 0.0,
+      "p75": 100.0
+    }
+  }
+}

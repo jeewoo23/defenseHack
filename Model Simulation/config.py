@@ -58,6 +58,19 @@ OBJECTIVE_DAMAGE_PER_STEP = 1.5
 RTB_BATTERY_THRESHOLD = 50.0   # UAV begins RTB when battery falls to this %
 RTB_ARRIVAL_DIST      = 300.0  # metres from base = "arrived"
 RTB_RECHARGE_STEPS    = 10     # steps spent at base before redeploying at 100%
+# Forward Arming and Refueling Point (FARP) doctrine: an RTB UAV charges at
+# whichever alive site (base or critical objective) is closest. Destroyed
+# objectives stop charging, so losing a site also costs the team its forward
+# fuel depot.
+ENABLE_SITE_CHARGING = True
+
+# --- Forward operating site comms ---
+# Alive critical objectives act as forward relay nodes with a hardened
+# backhaul to base (modeling fiber/satellite uplink at allied facilities).
+# UAVs within SITE_COMM_RANGE of an alive site are connected to base via the
+# site's backhaul, even when the relay chain doesn't reach them.
+ENABLE_SITE_AS_RELAY = True
+SITE_COMM_RANGE = 2_000.0
 
 # --- Greedy policy thresholds ---
 MAX_NEW_RELAYS_PER_STEP = 1   # cap simultaneous ISR->relay promotions

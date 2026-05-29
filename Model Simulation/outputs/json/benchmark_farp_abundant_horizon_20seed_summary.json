@@ -1,0 +1,93 @@
+{
+  "scenario": "dual_objective",
+  "branching": "config",
+  "persistent_watch": "config",
+  "emergency_intercept": "config",
+  "objective_defense": "config",
+  "policy": "horizon",
+  "seeds": 20,
+  "steps": 500,
+  "n_uavs": 18,
+  "n_enemies": 2,
+  "n_flank": 2,
+  "summary": {
+    "final_objective": {
+      "mean": -0.5217217868482471,
+      "std": 7.427601367202075,
+      "p25": -6.662222104143494,
+      "p75": 7.057491970999833
+    },
+    "final_isr_coverage": {
+      "mean": 0.95,
+      "std": 0.21794494717703367,
+      "p25": 1.0,
+      "p75": 1.0
+    },
+    "final_conn_fraction": {
+      "mean": 0.9700000000000001,
+      "std": 0.0647978813858815,
+      "p25": 0.9861111111111112,
+      "p75": 1.0
+    },
+    "final_time_weighted_coverage": {
+      "mean": 0.15104234198740335,
+      "std": 0.04711054932618966,
+      "p25": 0.12124343608708765,
+      "p75": 0.17917501817622358
+    },
+    "final_area_coverage": {
+      "mean": 0.1892,
+      "std": 0.04893456855843321,
+      "p25": 0.154,
+      "p75": 0.2252
+    },
+    "final_avg_detection_latency": {
+      "mean": 93.68333333333332,
+      "std": 58.75719577682002,
+      "p25": 39.166666666666664,
+      "p75": 133.54166666666666
+    },
+    "final_uavs_alive": {
+      "mean": 17.6,
+      "std": 0.9165151389911681,
+      "p25": 18.0,
+      "p75": 18.0
+    },
+    "final_enemies_remaining": {
+      "mean": 0.1,
+      "std": 0.43588989435406733,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "total_strikes": {
+      "mean": 5.9,
+      "std": 0.43588989435406733,
+      "p25": 6.0,
+      "p75": 6.0
+    },
+    "total_uav_kills": {
+      "mean": 0.4,
+      "std": 0.9165151389911681,
+      "p25": 0.0,
+      "p75": 0.0
+    },
+    "north_site_health": {
+      "mean": 59.375,
+      "std": 47.117638682344854,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "south_site_health": {
+      "mean": 45.35,
+      "std": 49.455308107421594,
+      "p25": 0.0,
+      "p75": 100.0
+    },
+    "mean_objective_health": {
+      "mean": 52.3625,
+      "std": 42.66317755102168,
+      "p25": 2.625,
+      "p75": 100.0
+    }
+  }
+}
