@@ -44,6 +44,11 @@ The project addresses a core problem in contested ISR: surveillance is valuable
 only if observations reach the operator. UAVs must decide when to sense, relay,
 hold, or return to base while enemies move and links change. AERIS frames this
 as online optimization over roles, relay placement, coverage, energy, and risk.
+We approach the resulting stochastic optimal control problem via rollout-based
+receding-horizon control, drawing on the rollout algorithm framework from
+approximate dynamic programming~\cite{bertsekas_rl_2019} and model-predictive
+control theory~\cite{mayne_mpc_2000}. The persistent-surveillance
+area-coverage term builds on cooperative patrolling literature~\cite{pasqualetti_patrolling_2012}.
 
 \section{Project Goal and Optimization Problem}
 The original AERIS objective is to coordinate UAVs that switch between ISR,
@@ -71,6 +76,9 @@ evaluation layer tracks time-weighted coverage, detection latency, flank
 coverage, UAV losses, strikes, connectivity, and objective health. A
 dual-objective scenario with undefended north and south sites forces multi-axis
 behavior, and a benchmark runner evaluates policies over multiple random seeds.
+The implementation uses NumPy~\cite{harris_numpy_2020} for state arrays,
+NetworkX~\cite{hagberg_networkx_2008} for graph connectivity queries, and
+Matplotlib~\cite{hunter_matplotlib_2007} for figure generation.
 
 \begin{table}[t]
 \centering
@@ -104,7 +112,7 @@ predicted objective damage.
 \section{Finite-Horizon Optimizer}
 The final controller is a \textbf{receding-horizon (model-predictive) controller
 operating on a discrete candidate policy set} -- a one-step \textit{rollout
-algorithm} in the sense of Bertsekas. At each replan point the controller
+algorithm}~\cite{bertsekas_rl_2019}. At each replan point the controller
 generates a small set of high-level candidate policies, simulates each forward
 $H$ steps in a cloned copy of the world, scores the terminal state with a
 multi-objective $J$, executes the maximizing candidate for $K$ steps, and
@@ -323,5 +331,40 @@ $J$ weights from offline rollout data, sweeping the area-coverage weight
 $\nu$ to find a discriminative operating point, and exploring whether the
 horizon controller's slightly defensive choice in the easier scenarios
 can be corrected with a stronger strike reward.
+
+\begin{thebibliography}{9}
+
+\bibitem{bertsekas_rl_2019}
+D. P. Bertsekas,
+\emph{Reinforcement Learning and Optimal Control}.
+Belmont, MA, USA: Athena Scientific, 2019.
+
+\bibitem{mayne_mpc_2000}
+D. Q. Mayne, J. B. Rawlings, C. V. Rao, and P. O. M. Scokaert,
+``Constrained model predictive control: Stability and optimality,''
+\emph{Automatica}, vol. 36, no. 6, pp. 789--814, Jun. 2000.
+
+\bibitem{pasqualetti_patrolling_2012}
+F. Pasqualetti, A. Franchi, and F. Bullo,
+``On cooperative patrolling: Optimal trajectories, complexity analysis, and
+approximation algorithms,''
+\emph{IEEE Trans. Robot.}, vol. 28, no. 3, pp. 592--606, Jun. 2012.
+
+\bibitem{hagberg_networkx_2008}
+A. A. Hagberg, D. A. Schult, and P. J. Swart,
+``Exploring network structure, dynamics, and function using NetworkX,''
+in \emph{Proc. 7th Python in Science Conf. (SciPy)}, 2008, pp. 11--15.
+
+\bibitem{harris_numpy_2020}
+C. R. Harris \emph{et al.},
+``Array programming with NumPy,''
+\emph{Nature}, vol. 585, no. 7825, pp. 357--362, Sep. 2020.
+
+\bibitem{hunter_matplotlib_2007}
+J. D. Hunter,
+``Matplotlib: A 2D graphics environment,''
+\emph{Comput. Sci. Eng.}, vol. 9, no. 3, pp. 90--95, May 2007.
+
+\end{thebibliography}
 
 \end{document}
