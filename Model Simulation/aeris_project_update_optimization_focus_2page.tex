@@ -67,6 +67,27 @@ finite-horizon optimal control problem on a discrete-time hybrid system
 (continuous UAV positions plus discrete role variables), which is intractable
 to solve exactly.
 
+\subsection{Why Rollout-Based MPC}
+Three families of alternative solvers were considered and rejected.
+\textit{Mixed-integer linear or convex programming} cannot directly express
+the graph-connectivity constraint that drives the problem: requiring a path
+from each ISR to base through alive UAVs is combinatorial and non-convex,
+and linearizing it requires either a static topology assumption or
+auxiliary indicator variables that explode with team size. \textit{Online
+or offline reinforcement learning} (PPO, DQN, etc.) demands extensive
+training, produces opaque policies that are hard to validate for safety-of-flight
+constraints, and provides no guarantee of acceptable behavior in
+out-of-distribution scenarios such as the four UAV-vs-enemy ratios swept
+in Section VII. \textit{Pure greedy heuristics} are interpretable and
+fast but cannot reason about future consequences -- e.g.\ whether
+committing an ISR to chase a flank enemy will eventually leave the
+relay chain too thin to support strike completion. The rollout
+algorithm~\cite{bertsekas_rl_2019} with a discrete candidate set
+addresses all three gaps: it is provably no worse than its base policy,
+runs in real time with bounded per-step compute, produces an
+interpretable trace (which candidate was selected when), and naturally
+incorporates the stochastic enemy model through forward simulation.
+
 \section{Simulator}
 The simulator implements a discrete-time UAV team. UAVs move, consume battery,
 return to base, recharge, and switch among ISR, mobile relay, and static relay
@@ -309,6 +330,37 @@ Fifth, area coverage values remain similar across controllers
 near-uniform baseline rather than discriminating between candidates, but
 it does suppress degenerate cluster-on-base behavior that would otherwise
 emerge once an enemy is struck.
+
+\section{Limitations and Assumptions}
+Three categories of limitation should be acknowledged before drawing
+broader conclusions.
+
+\textbf{Scenario assumptions.} The four UAV-vs-enemy ratios sweep a single
+axis; sensor radius, comm range, enemy speed, and the dual-objective
+geometry are held fixed. The hardened backhaul on each site is modeled as
+infinite-bandwidth and zero-latency, and enemy behavior is fixed
+(retreat-from-detection or move-toward-target) without adversarial
+adaptation to UAV positions. The simulation does not model jamming,
+weather, fog-of-war, or operator-side workload constraints from the
+original proposal's $W_{\text{op}}$ term.
+
+\textbf{Mechanism parameters.} Two scalar mechanism constants -- the
+cooperative-observation cap of $2$ and the strike window of $12$ steps --
+were chosen by doctrinal reasoning, not derived from a physical model or
+swept for sensitivity. The area-coverage weight $\nu=2.0$ in $J$ was set
+by inspection and, as Section VIII observes, does not strongly
+discriminate between candidates in the current sweep, so its operating
+point is plausibly suboptimal.
+
+\textbf{Optimizer parameters.} The rollout horizon $H=20$ and replan
+cadence $K=5$ are fixed, not adapted to scenario difficulty. The
+within-candidate UAV-to-enemy matching is greedy nearest-neighbor rather
+than an optimal Hungarian assignment. The $J$ weights $(\alpha\ldots\psi)$
+were tuned by hand to balance objective preservation against UAV losses;
+no offline learning of these weights from rollout outcomes was attempted.
+Finally, single-seed demonstrations such as the seed-42 perfect runs in
+the supplementary GIFs should not be interpreted as representative; the
+20-seed means in Table~\ref{tab:results} are the reliable signal.
 
 \section{Conclusion}
 AERIS now spans both ends of the optimization spectrum: a fast greedy
