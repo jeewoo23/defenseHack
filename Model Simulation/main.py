@@ -23,7 +23,8 @@ from config import (
     SCENARIO_BASELINE, SCENARIO_DUAL_OBJECTIVE,
 )
 
-SNAPSHOT_STEPS = [1, 100, 200, 300, 400, 500]
+SNAPSHOT_STEPS = [1, 40, 80, 120, 160, 200]
+MAIN_N_STEPS = 200          # run only the combat window for snapshots + GIFs
 IMAGE_OUTPUT_DIR = Path("outputs") / "images"
 
 
@@ -47,9 +48,9 @@ def run_scenario(
 
     sim = Simulation(scenario=scenario, policy=policy)
 
-    print(f"\nRunning {N_STEPS} steps  (snapshot at steps: {SNAPSHOT_STEPS})\n")
+    print(f"\nRunning {MAIN_N_STEPS} steps  (snapshot at steps: {SNAPSHOT_STEPS})\n")
     sim.run(
-        n_steps=N_STEPS,
+        n_steps=MAIN_N_STEPS,
         snapshot_at_steps=SNAPSHOT_STEPS,
         animate_every=animate_every,
         verbose=True,

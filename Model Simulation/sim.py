@@ -103,7 +103,11 @@ def compute_objective_score(
     enemies, uavs, history, conn_fraction, relays_killed_total, objectives=None,
     area_coverage: float = 0.0,
 ) -> float:
-    """Run-to-date score that is less sensitive to enemy attrition timing."""
+    """
+    Bounded [0, sum(weights)] mission score — all terms are fractions in [0, 1].
+    Score reaches 0 only when every UAV is dead, every site is destroyed, and
+    no coverage or connectivity was ever established.
+    """
     w = SCORE_WEIGHTS
     twc = compute_time_weighted_coverage(enemies)
 
@@ -118,13 +122,13 @@ def compute_objective_score(
     latency_term = 1.0 - (latency_for_score / max(1, N_STEPS))
     latency_term = max(0.0, min(1.0, latency_term))
 
-    uavs_lost = sum(1 for u in uavs if not u.alive)
     objectives = objectives or []
     objective_health = (
         np.mean([o.health / OBJECTIVE_HEALTH for o in objectives])
-        if objectives else 0.0
+        if objectives else 1.0   # baseline scenario has no objectives to lose
     )
-    objectives_lost = sum(1 for o in objectives if not o.alive)
+
+    uav_survival = sum(1 for u in uavs if u.alive) / max(1, len(uavs))
 
     return (
         w["time_weighted_coverage"] * twc
@@ -132,9 +136,7 @@ def compute_objective_score(
         + w["detection_latency"] * latency_term
         + w["objective_health"] * objective_health
         + w["area_coverage"] * avg_area
-        - w["uav_loss_penalty"] * uavs_lost
-        - w["relay_loss_penalty"] * relays_killed_total
-        - w["objective_loss_penalty"] * objectives_lost
+        + w["uav_survival"] * uav_survival
     )
 
 
@@ -449,7 +451,14 @@ class Simulation:
         self.history.append(metrics)
 
         if record_snapshot:
-            self.snapshots.append((self.step_num, G, set(connected_ids)))
+            self.snapshots.append((
+                self.step_num,
+                G,
+                set(connected_ids),
+                [(e.id, e.pos.copy(), e.alive, e.consecutive_obs) for e in self.enemies],
+                [(u.id, u.pos.copy(), u.mode, u.alive, u.battery) for u in self.uavs],
+                [(o.name, o.pos.copy(), o.health) for o in self.objectives],
+            ))
 
         if record_frame:
             self.frames.append({

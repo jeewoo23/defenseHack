@@ -33,7 +33,8 @@ def _draw_objectives(ax, objectives):
 # ---------------------------------------------------------------------------
 # Single-step map snapshot
 # ---------------------------------------------------------------------------
-def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
+def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None,
+                  enemy_states=None, uav_states=None, objective_states=None):
     """
     Draw the tactical map for one timestep.
     - Terrain shown as background contour
@@ -41,6 +42,10 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
     - UAVs: colour/shape by mode, white edge = connected, red edge = disconnected
     - Dead UAVs shown as grey X
     - Enemies shown as red stars with kill-range circle
+
+    enemy_states: list of (eid, pos, alive, consecutive_obs) captured at snapshot time
+    uav_states:   list of (uid, pos, mode, alive, battery) captured at snapshot time
+    objective_states: list of (name, pos, health) captured at snapshot time
     """
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 8))
@@ -61,8 +66,12 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
 
     # --- Comm links ---
     node_pos = {"base": sim.base.pos}
-    for u in sim.uavs:
-        node_pos[u.id] = u.pos
+    if uav_states is not None:
+        for uid, upos, _mode, _alive, _bat in uav_states:
+            node_pos[uid] = upos
+    else:
+        for u in sim.uavs:
+            node_pos[u.id] = u.pos
 
     for u_node, v_node in G.edges():
         p1 = node_pos.get(u_node)
@@ -80,43 +89,81 @@ def plot_snapshot(sim, G: nx.Graph, connected_ids: set, step: int, ax=None):
     ax.annotate("Base", sim.base.pos + np.array([120, 120]),
                 fontsize=8, fontweight="bold", color="black")
 
-    if getattr(sim, "objectives", None):
+    # --- Objectives ---
+    if objective_states is not None:
+        if objective_states:
+            _draw_objectives(ax, [
+                {"name": name, "pos": pos, "health": health}
+                for name, pos, health in objective_states
+            ])
+    elif getattr(sim, "objectives", None):
         _draw_objectives(ax, [
             {"name": o.name, "pos": o.pos, "health": o.health}
             for o in sim.objectives
         ])
 
     # --- UAVs ---
-    for uav in sim.uavs:
-        if not uav.alive:
-            ax.scatter(*uav.pos, s=80, c="gray", marker="x", alpha=0.4, zorder=4)
-            continue
-        color      = _MODE_COLOR[uav.mode]
-        marker     = _MODE_MARKER[uav.mode]
-        edge_color = "white" if uav.id in connected_ids else "#FF1744"
-        ax.scatter(*uav.pos, s=160, c=color, marker=marker,
-                   edgecolors=edge_color, linewidths=2, zorder=5)
-        bat_str = f"U{uav.id}\n{uav.battery:.0f}%"
-        ax.annotate(bat_str, uav.pos + np.array([80, 80]), fontsize=6.5, zorder=7)
+    if uav_states is not None:
+        for uid, upos, umode, ualive, ubat in uav_states:
+            if not ualive:
+                ax.scatter(*upos, s=80, c="gray", marker="x", alpha=0.4, zorder=4)
+                continue
+            color      = _MODE_COLOR[umode]
+            marker     = _MODE_MARKER[umode]
+            edge_color = "white" if uid in connected_ids else "#FF1744"
+            ax.scatter(*upos, s=160, c=color, marker=marker,
+                       edgecolors=edge_color, linewidths=2, zorder=5)
+            ax.annotate(f"U{uid}\n{ubat:.0f}%", upos + np.array([80, 80]),
+                        fontsize=6.5, zorder=7)
+    else:
+        for uav in sim.uavs:
+            if not uav.alive:
+                ax.scatter(*uav.pos, s=80, c="gray", marker="x", alpha=0.4, zorder=4)
+                continue
+            color      = _MODE_COLOR[uav.mode]
+            marker     = _MODE_MARKER[uav.mode]
+            edge_color = "white" if uav.id in connected_ids else "#FF1744"
+            ax.scatter(*uav.pos, s=160, c=color, marker=marker,
+                       edgecolors=edge_color, linewidths=2, zorder=5)
+            ax.annotate(f"U{uav.id}\n{uav.battery:.0f}%", uav.pos + np.array([80, 80]),
+                        fontsize=6.5, zorder=7)
 
     # --- Enemies ---
-    for enemy in sim.enemies:
-        if not enemy.alive:
-            ax.scatter(*enemy.pos, s=120, c="gray", marker="x", alpha=0.4, zorder=4)
-            ax.annotate(f"E{enemy.id} KIA", enemy.pos + np.array([80, 80]),
-                        fontsize=7, color="gray")
-            continue
-        obs   = enemy.consecutive_obs
-        label = f"E{enemy.id}" + (f" [{obs}/20]" if obs > 0 else "")
-        ax.scatter(*enemy.pos, s=220, c="#B71C1C", marker="*", zorder=6)
-        ax.annotate(label, enemy.pos + np.array([80, 80]),
-                    fontsize=8, color="#B71C1C", fontweight="bold")
-        ax.add_patch(plt.Circle(enemy.pos, ENEMY_KILL_RANGE,
-                                color="#B71C1C", fill=False,
-                                alpha=0.5, linewidth=1.2, linestyle="--"))
-        ax.add_patch(plt.Circle(enemy.pos, ENEMY_THREAT_RANGE,
-                                color="#FF6F00", fill=False,
-                                alpha=0.25, linewidth=0.8, linestyle=":"))
+    if enemy_states is not None:
+        for eid, epos, ealive, eobs in enemy_states:
+            if not ealive:
+                ax.scatter(*epos, s=120, c="gray", marker="x", alpha=0.4, zorder=4)
+                ax.annotate(f"E{eid} KIA", epos + np.array([80, 80]),
+                            fontsize=7, color="gray")
+                continue
+            label = f"E{eid}" + (f" [{eobs}/20]" if eobs > 0 else "")
+            ax.scatter(*epos, s=220, c="#B71C1C", marker="*", zorder=6)
+            ax.annotate(label, epos + np.array([80, 80]),
+                        fontsize=8, color="#B71C1C", fontweight="bold")
+            ax.add_patch(plt.Circle(epos, ENEMY_KILL_RANGE,
+                                    color="#B71C1C", fill=False,
+                                    alpha=0.5, linewidth=1.2, linestyle="--"))
+            ax.add_patch(plt.Circle(epos, ENEMY_THREAT_RANGE,
+                                    color="#FF6F00", fill=False,
+                                    alpha=0.25, linewidth=0.8, linestyle=":"))
+    else:
+        for enemy in sim.enemies:
+            if not enemy.alive:
+                ax.scatter(*enemy.pos, s=120, c="gray", marker="x", alpha=0.4, zorder=4)
+                ax.annotate(f"E{enemy.id} KIA", enemy.pos + np.array([80, 80]),
+                            fontsize=7, color="gray")
+                continue
+            obs   = enemy.consecutive_obs
+            label = f"E{enemy.id}" + (f" [{obs}/20]" if obs > 0 else "")
+            ax.scatter(*enemy.pos, s=220, c="#B71C1C", marker="*", zorder=6)
+            ax.annotate(label, enemy.pos + np.array([80, 80]),
+                        fontsize=8, color="#B71C1C", fontweight="bold")
+            ax.add_patch(plt.Circle(enemy.pos, ENEMY_KILL_RANGE,
+                                    color="#B71C1C", fill=False,
+                                    alpha=0.5, linewidth=1.2, linestyle="--"))
+            ax.add_patch(plt.Circle(enemy.pos, ENEMY_THREAT_RANGE,
+                                    color="#FF6F00", fill=False,
+                                    alpha=0.25, linewidth=0.8, linestyle=":"))
 
     # --- Legend ---
     legend_items = [
@@ -477,8 +524,15 @@ def plot_snapshots_grid(sim, save_path: str | None = None,
             if item is None:
                 ax.axis("off")
             else:
-                step, G, connected_ids = item
-                plot_snapshot(sim, G, connected_ids, step, ax=ax)
+                if len(item) == 6:
+                    step, G, connected_ids, enemy_states, uav_states, objective_states = item
+                else:
+                    step, G, connected_ids = item
+                    enemy_states = uav_states = objective_states = None
+                plot_snapshot(sim, G, connected_ids, step, ax=ax,
+                              enemy_states=enemy_states,
+                              uav_states=uav_states,
+                              objective_states=objective_states)
 
     fig.suptitle("AERIS Simulation — Snapshots", fontsize=14, fontweight="bold")
     plt.tight_layout()

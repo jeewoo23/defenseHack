@@ -162,14 +162,12 @@ W_SWITCH = 0.1
 # Honest scoring weights. These score policy quality over the run instead of
 # rewarding abrupt coverage jumps caused by enemy attrition.
 SCORE_WEIGHTS = {
-    "time_weighted_coverage": 3.0,
-    "connectivity": 1.0,
-    "detection_latency": 2.0,
-    "uav_loss_penalty": 1.5,
-    "relay_loss_penalty": 2.0,
-    "objective_health": 3.0,
-    "objective_loss_penalty": 5.0,
-    "area_coverage": 2.0,
+    "time_weighted_coverage": 3.0,   # 0-1 fraction of alive-time enemies were observed
+    "connectivity":           1.0,   # 0-1 avg fraction of UAVs connected to base
+    "detection_latency":      2.0,   # 0-1 (1 = instant detection, 0 = never detected)
+    "objective_health":       3.0,   # 0-1 mean site health (1.0 when no objectives)
+    "area_coverage":          1.0,   # 0-1 fraction of grid cells freshly observed
+    "uav_survival":           2.0,   # 0-1 fraction of UAVs still alive
 }
 
 # --- Simulation ---
